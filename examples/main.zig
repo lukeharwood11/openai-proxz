@@ -21,5 +21,5 @@ pub fn main() !void {
             },
         },
     });
-    std.log.debug("I got a response: {any}", .{response});
+    std.log.debug("I got a response: {s}", .{response});
 }

@@ -106,16 +106,20 @@ pub const OpenAI = struct {
     base_url: []const u8,
     organization_id: ?[]const u8,
     project_id: ?[]const u8,
+    headers: std.http.Client.Request.Headers,
+    arena: *std.heap.ArenaAllocator,
 
-    pub fn moveNullableString(allocator: std.mem.Allocator, str: ?[]const u8) !?[]const u8 {
+    pub fn moveNullableString(self: *OpenAI, str: ?[]const u8) !?[]const u8 {
         if (str) |s| {
-            return try allocator.dupe(u8, s);
+            return try self.arena.allocator().dupe(u8, s);
         } else {
             return null;
         }
     }
 
     pub fn init(allocator: std.mem.Allocator, openai_config: OpenAIConfig) !OpenAI {
+        const arena = try allocator.create(std.heap.ArenaAllocator);
+        arena.* = std.heap.ArenaAllocator.init(allocator);
         var self = OpenAI{
             .allocator = allocator,
             .client = http.Client{ .allocator = allocator },
@@ -125,31 +129,21 @@ pub const OpenAI = struct {
             .base_url = undefined,
             .organization_id = null,
             .project_id = null,
+            .headers = undefined, // set below
+            .arena = arena,
         };
 
-        var env_map = try std.process.getEnvMap(allocator);
+        // get env vars
+        var env_map = try std.process.getEnvMap(self.allocator);
         defer env_map.deinit();
 
-        const api_key = try moveNullableString(allocator, openai_config.api_key orelse env_map.get("OPENAI_API_KEY"));
-        errdefer if (api_key) |key| {
-            allocator.free(key);
-        };
+        // make all strings managed on the heap via the arena allocator
+        const api_key = try self.moveNullableString(openai_config.api_key orelse env_map.get("OPENAI_API_KEY"));
+        const base_url = try self.moveNullableString(openai_config.base_url orelse env_map.get("OPENAI_BASE_URL") orelse "https://api.openai.com/v1");
+        const organization_id = try self.moveNullableString(openai_config.organization_id orelse env_map.get("OPENAI_ORGANIZATION_ID"));
+        const project_id = try self.moveNullableString(openai_config.project_id orelse env_map.get("OPENAI_PROJECT_ID"));
 
-        const base_url = try moveNullableString(allocator, openai_config.base_url orelse env_map.get("OPENAI_BASE_URL") orelse "https://api.openai.com/v1");
-        errdefer if (base_url) |url| {
-            allocator.free(url);
-        };
-
-        const organization_id = try moveNullableString(allocator, openai_config.organization_id orelse env_map.get("OPENAI_ORGANIZATION_ID"));
-        errdefer if (organization_id) |id| {
-            allocator.free(id);
-        };
-
-        const project_id = try moveNullableString(allocator, openai_config.project_id orelse env_map.get("OPENAI_PROJECT_ID"));
-        errdefer if (project_id) |id| {
-            allocator.free(id);
-        };
-
+        // init client config
         self.api_key = api_key orelse {
             return OpenAIError.OpenAIAPIKeyNotSet;
         };
@@ -159,8 +153,14 @@ pub const OpenAI = struct {
         self.organization_id = organization_id;
         self.project_id = project_id;
 
+        // init sub components
         self.chat = Chat.init(&self);
         self.embeddings = Embeddings.init(&self);
+
+        // client headers
+        const auth_header = try std.fmt.allocPrint(self.arena.allocator(), "Bearer {s}", .{self.api_key});
+        self.headers = .{ .authorization = .{ .override = auth_header }, .content_type = .{ .override = "application/json" } };
+
         return self;
     }
 
@@ -168,29 +168,18 @@ pub const OpenAI = struct {
         self.client.deinit();
         self.chat.deinit();
         self.embeddings.deinit();
-        self.allocator.free(self.api_key);
-        self.allocator.free(self.base_url);
-        if (self.organization_id) |org_id| {
-            self.allocator.free(org_id);
-        }
-        if (self.project_id) |proj_id| {
-            self.allocator.free(proj_id);
-        }
+        self.arena.deinit();
+        self.allocator.destroy(self.arena);
     }
 
     pub fn request(self: *const OpenAI, method: http.Method, path: []const u8, body: []const u8) ![]const u8 {
         // FUTURE ME, if I don't assign these to local variables, I get segfaults- no clue why
-        const key = self.api_key;
-        const base_url = self.base_url;
         const allocator = self.allocator;
 
-        log.debug("{s} - {s}{s}", .{ @tagName(method), base_url, path });
-
-        const auth_header = try std.fmt.allocPrint(allocator, "Bearer {s}", .{key});
-        defer allocator.free(auth_header);
-
-        const url_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ base_url, path });
+        const url_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ self.base_url, path });
         defer allocator.free(url_string);
+
+        log.debug("{s} - {s}", .{ @tagName(method), url_string });
 
         const uri = try std.Uri.parse(url_string);
 
@@ -203,17 +192,18 @@ pub const OpenAI = struct {
 
         var req = try client.open(method, uri, .{
             .server_header_buffer = server_header_buffer,
-            .headers = .{ .authorization = .{ .override = auth_header }, .content_type = .{ .override = "application/json" } },
+            .headers = self.headers,
         });
         defer req.deinit();
 
-        req.transfer_encoding = .chunked;
+        // Look into chunked encoding and why I might need it.
+        // req.transfer_encoding = .chunked;
         try req.send();
         try req.writer().writeAll(body);
         try req.finish();
         try req.wait();
 
-        log.info("{s} - {s}{s} - {d} {s}", .{ @tagName(method), base_url, path, @intFromEnum(req.response.status), req.response.status.phrase() orelse "None" });
+        log.info("{s} - {s} - {d} {s}", .{ @tagName(method), url_string, @intFromEnum(req.response.status), req.response.status.phrase() orelse "None" });
 
         if (req.response.status == .ok) {
             const response = try req.reader().readAllAlloc(self.allocator, 2048);
