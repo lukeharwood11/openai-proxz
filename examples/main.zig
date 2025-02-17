@@ -1,18 +1,18 @@
 const std = @import("std");
-const zai = @import("zai");
+const proxz = @import("proxz");
 
-pub fn main() void {
+pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
-    var openai = zai.OpenAI.init(allocator, .{
+    var openai = try proxz.OpenAI.init(allocator, .{
         .api_key = "sk-proj-1234567890",
     });
     defer openai.deinit();
 
     // std.log.debug("{any}", .{openai.chat.client});
-    openai.chat.create(.{
+    const response = try openai.chat.completions.create(.{
         .model = "gpt-4o",
         .messages = &.{
             .{
@@ -21,4 +21,5 @@ pub fn main() void {
             },
         },
     });
+    std.log.debug("I got a response: {any}", .{response});
 }

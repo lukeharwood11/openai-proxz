@@ -5,18 +5,18 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // Create the library module
-    const zai_module = b.addModule("zai", .{
+    const proxz_module = b.addModule("proxz", .{
         .root_source_file = b.path("src/root.zig"),
     });
 
     const exe = b.addExecutable(.{
-        .name = "zai",
+        .name = "proxz",
         .root_source_file = b.path("examples/main.zig"),
         .target = target,
         .optimize = optimize,
     });
     b.installArtifact(exe);
-    exe.root_module.addImport("zai", zai_module);
+    exe.root_module.addImport("proxz", proxz_module);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
