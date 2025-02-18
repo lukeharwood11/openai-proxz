@@ -63,5 +63,5 @@ pub fn main() !void {
     });
     // Future Luke: why don't I have to free the response?
     // allocator.free(response);
-    std.log.debug("I got a response: {s}", .{response});
+    std.log.debug("{s}", .{response.choices[0].message.content});
 }

@@ -9,7 +9,7 @@
 const std = @import("std");
 const http = std.http;
 const log = std.log;
-const openai_response = @import("response.zig");
+const models = @import("models.zig");
 
 pub const OpenAIConfig = struct {
     api_key: ?[]const u8 = null,
@@ -52,7 +52,7 @@ pub const Completions = struct {
 
     pub fn deinit(_: *Completions) void {}
 
-    pub fn create(self: *Completions, request: ChatRequest) ![]const u8 {
+    pub fn create(self: *Completions, request: ChatRequest) !models.ChatCompletion {
         // Future Luke: no matter what allocator I used, it corrupts self.openai.base_url
         // Past Luke: don't reference something that lives on the stack, idiot.
         const allocator = self.openai.arena.allocator();
@@ -198,7 +198,7 @@ pub const OpenAI = struct {
         log.debug("Deiniting OpenAI complete.", .{});
     }
 
-    pub fn request(self: *const OpenAI, method: http.Method, path: []const u8, options: RequestOptions) ![]const u8 {
+    pub fn request(self: *const OpenAI, method: http.Method, path: []const u8, options: RequestOptions) !models.ChatCompletion {
         const allocator = self.arena.allocator();
         const url_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ self.base_url, path });
         defer allocator.free(url_string);
@@ -225,8 +225,7 @@ pub const OpenAI = struct {
         }
         try req.send();
         if (options.body) |body| {
-            // req.transfer_encoding = .chunked;
-            std.debug.print("Sending Body: {s}\n", .{body});
+            log.debug("{s}\n", .{body});
             try req.writer().writeAll(body);
             try req.finish();
         }
@@ -236,10 +235,15 @@ pub const OpenAI = struct {
 
         if (req.response.status == .ok) {
             const response = try req.reader().readAllAlloc(allocator, 2048);
-            return response;
+            // defer allocator.free(response);
+            const parsed = try std.json.parseFromSliceLeaky(models.ChatCompletion, allocator, response, .{ .ignore_unknown_fields = true });
+            // TODO: free parsed stuff
+            return parsed;
         } else {
             const response = try req.reader().readAllAlloc(allocator, 2048);
-            return response;
+            defer allocator.free(response);
+            // return try std.json.parseFromSlice(models.ChatCompletion, allocator, response, .{});
+            return OpenAIError.BadRequest;
         }
     }
 };
