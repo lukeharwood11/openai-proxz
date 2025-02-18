@@ -41,9 +41,9 @@ pub const ChatResponse = struct {
 };
 
 pub const Completions = struct {
-    openai: *OpenAI,
+    openai: *const OpenAI,
 
-    pub fn init(openai: *OpenAI) Completions {
+    pub fn init(openai: *const OpenAI) Completions {
         return Completions{
             .openai = openai,
         };
@@ -52,16 +52,32 @@ pub const Completions = struct {
     pub fn deinit(_: *Completions) void {}
 
     pub fn create(self: *Completions, request: ChatRequest) ![]const u8 {
+        // const allocator = self.openai.allocator;
         _ = request;
-        return self.openai.request(.POST, "/chat/completions", "");
+        std.debug.print("The type of self.openai.allocator: {s}\n", .{@typeName(@TypeOf(self.openai.allocator))});
+
+        std.debug.print("Base URL Before: {s}\n", .{self.openai.base_url});
+        // Use the arena allocator for the JSON string
+        // const body = try std.json.stringifyAlloc(allocator, .{
+        //     .model = request.model,
+        //     .messages = request.messages,
+        // }, .{});
+        const body = "{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}]}";
+
+        std.debug.print("Base URL After: {s}\n", .{self.openai.base_url});
+
+        // Now use this body for the request
+        return self.openai.request(.POST, "/chat/completions", .{
+            .body = body,
+        });
     }
 };
 
 pub const Chat = struct {
-    openai: *OpenAI,
+    openai: *const OpenAI,
     completions: Completions,
 
-    pub fn init(openai: *OpenAI) Chat {
+    pub fn init(openai: *const OpenAI) Chat {
         return Chat{
             .openai = openai,
             .completions = Completions.init(openai),
@@ -82,9 +98,9 @@ pub const Chat = struct {
 };
 
 pub const Embeddings = struct {
-    openai: *OpenAI,
+    openai: *const OpenAI,
 
-    pub fn init(openai: *OpenAI) Embeddings {
+    pub fn init(openai: *const OpenAI) Embeddings {
         return Embeddings{
             .openai = openai,
         };
@@ -93,8 +109,23 @@ pub const Embeddings = struct {
     pub fn deinit(_: *Embeddings) void {}
 };
 
-pub const OpenAIError = error{
+pub const ConfigError = error{
     OpenAIAPIKeyNotSet,
+};
+
+pub const RequestOptions = struct {
+    body: ?[]const u8 = null,
+};
+
+pub const OpenAIError = error{
+    BadRequest,
+    Unauthorized,
+    PaymentRequired,
+    Forbidden,
+    NotFound,
+    MethodNotAllowed,
+    TooManyRequests,
+    InternalServerError,
 };
 
 pub const OpenAI = struct {
@@ -111,7 +142,7 @@ pub const OpenAI = struct {
 
     pub fn moveNullableString(self: *OpenAI, str: ?[]const u8) !?[]const u8 {
         if (str) |s| {
-            return try self.arena.allocator().dupe(u8, s);
+            return try self.arena.allocator().dupeZ(u8, s);
         } else {
             return null;
         }
@@ -122,7 +153,7 @@ pub const OpenAI = struct {
         arena.* = std.heap.ArenaAllocator.init(allocator);
         var self = OpenAI{
             .allocator = allocator,
-            .client = http.Client{ .allocator = allocator },
+            .client = http.Client{ .allocator = arena.allocator() },
             .chat = undefined, // have to pass in self
             .embeddings = undefined, // have to pass in self
             .api_key = undefined,
@@ -134,7 +165,7 @@ pub const OpenAI = struct {
         };
 
         // get env vars
-        var env_map = try std.process.getEnvMap(self.allocator);
+        var env_map = try std.process.getEnvMap(arena.allocator());
         defer env_map.deinit();
 
         // make all strings managed on the heap via the arena allocator
@@ -143,9 +174,14 @@ pub const OpenAI = struct {
         const organization_id = try self.moveNullableString(openai_config.organization_id orelse env_map.get("OPENAI_ORGANIZATION_ID"));
         const project_id = try self.moveNullableString(openai_config.project_id orelse env_map.get("OPENAI_PROJECT_ID"));
 
+        std.debug.print("api_key: {?s}, length {d}\n", .{ api_key, api_key.?.len });
+        std.debug.print("base_url: {?s}, length {d}\n", .{ base_url, base_url.?.len });
+        std.debug.print("organization_id: {?s}, length {d}\n", .{ organization_id, 0 });
+        std.debug.print("project_id: {?s}, length {d}\n", .{ project_id, 0 });
+
         // init client config
         self.api_key = api_key orelse {
-            return OpenAIError.OpenAIAPIKeyNotSet;
+            return ConfigError.OpenAIAPIKeyNotSet;
         };
         self.base_url = base_url orelse {
             unreachable;
@@ -160,22 +196,26 @@ pub const OpenAI = struct {
         // client headers
         const auth_header = try std.fmt.allocPrint(self.arena.allocator(), "Bearer {s}", .{self.api_key});
         self.headers = .{ .authorization = .{ .override = auth_header }, .content_type = .{ .override = "application/json" } };
-
         return self;
     }
 
     pub fn deinit(self: *OpenAI) void {
+        std.debug.print("Deiniting client\n", .{});
         self.client.deinit();
+        std.debug.print("Deiniting chat\n", .{});
         self.chat.deinit();
+        std.debug.print("Deiniting embeddings\n", .{});
         self.embeddings.deinit();
+        std.debug.print("Deiniting arena\n", .{});
         self.arena.deinit();
+        std.debug.print("Deiniting allocator\n", .{});
         self.allocator.destroy(self.arena);
     }
 
-    pub fn request(self: *const OpenAI, method: http.Method, path: []const u8, body: []const u8) ![]const u8 {
-        // FUTURE ME, if I don't assign these to local variables, I get segfaults- no clue why
-        const allocator = self.allocator;
-
+    pub fn request(self: *const OpenAI, method: http.Method, path: []const u8, options: RequestOptions) ![]const u8 {
+        // FUTURE ME, if I don't assign the allocator to a local variable, I get segfaults- no clue why
+        const allocator = self.arena.allocator();
+        std.debug.print("The type of allocator: {s}\n", .{@typeName(@TypeOf(allocator))});
         const url_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ self.base_url, path });
         defer allocator.free(url_string);
 
@@ -186,9 +226,14 @@ pub const OpenAI = struct {
         const server_header_buffer = try allocator.alloc(u8, 8 * 1024 * 4);
         defer allocator.free(server_header_buffer);
 
+        // std.debug.print("server_header_buffer\n", .{});
+
         // Create a new client for each request to avoid connection pool issues
-        var client = http.Client{ .allocator = self.allocator };
+        var client = http.Client{ .allocator = allocator };
         defer client.deinit();
+
+        // std.debug.print("client\n", .{});
+        std.debug.print("headers: {any}\n", .{self.headers});
 
         var req = try client.open(method, uri, .{
             .server_header_buffer = server_header_buffer,
@@ -196,28 +241,34 @@ pub const OpenAI = struct {
         });
         defer req.deinit();
 
-        // Look into chunked encoding and why I might need it.
-        // req.transfer_encoding = .chunked;
+        if (options.body) |body| {
+            req.transfer_encoding = .{ .content_length = body.len };
+        }
         try req.send();
-        try req.writer().writeAll(body);
-        try req.finish();
+        if (options.body) |body| {
+            // req.transfer_encoding = .chunked;
+            std.debug.print("Sending Body: {s}\n", .{body});
+            try req.writer().writeAll(body);
+            try req.finish();
+        }
         try req.wait();
 
         log.info("{s} - {s} - {d} {s}", .{ @tagName(method), url_string, @intFromEnum(req.response.status), req.response.status.phrase() orelse "None" });
 
         if (req.response.status == .ok) {
-            const response = try req.reader().readAllAlloc(self.allocator, 2048);
+            const response = try req.reader().readAllAlloc(allocator, 2048);
+            return response;
+        } else {
+            const response = try req.reader().readAllAlloc(allocator, 2048);
             return response;
         }
-
-        return "";
     }
 };
 
 test "OpenAI.init no api key" {
     const allocator = std.testing.allocator;
     const openai = OpenAI.init(allocator, .{});
-    try std.testing.expectError(OpenAIError.OpenAIAPIKeyNotSet, openai);
+    try std.testing.expectError(ConfigError.OpenAIAPIKeyNotSet, openai);
 }
 
 test "Completions.create" {
