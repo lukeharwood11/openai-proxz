@@ -30,11 +30,10 @@ fn readDotEnv(allocator: std.mem.Allocator) !*std.StringHashMap([]const u8) {
 }
 
 pub fn main() !void {
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // defer _ = gpa.deinit();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
 
-    // const allocator = gpa.allocator();
-    const allocator = std.heap.page_allocator;
+    const allocator = gpa.allocator();
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -53,7 +52,6 @@ pub fn main() !void {
 
     defer openai.deinit();
 
-    // std.log.debug("{any}", .{openai.chat.client});
     const response = try openai.chat.completions.create(.{
         .model = "gpt-4o",
         .messages = &.{

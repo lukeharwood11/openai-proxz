@@ -9,6 +9,7 @@
 const std = @import("std");
 const http = std.http;
 const log = std.log;
+const openai_response = @import("response.zig");
 
 pub const OpenAIConfig = struct {
     api_key: ?[]const u8 = null,
@@ -52,20 +53,11 @@ pub const Completions = struct {
     pub fn deinit(_: *Completions) void {}
 
     pub fn create(self: *Completions, request: ChatRequest) ![]const u8 {
-        // const allocator = self.openai.allocator;
-        _ = request;
-        std.debug.print("The type of self.openai.allocator: {s}\n", .{@typeName(@TypeOf(self.openai.allocator))});
-
-        std.debug.print("Base URL Before: {s}\n", .{self.openai.base_url});
-        // Use the arena allocator for the JSON string
-        // const body = try std.json.stringifyAlloc(allocator, .{
-        //     .model = request.model,
-        //     .messages = request.messages,
-        // }, .{});
-        const body = "{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}]}";
-
-        std.debug.print("Base URL After: {s}\n", .{self.openai.base_url});
-
+        // Future Luke: no matter what allocator I used, it corrupts self.openai.base_url
+        // Past Luke: don't reference something that lives on the stack, idiot.
+        const allocator = self.openai.arena.allocator();
+        const body = try std.json.stringifyAlloc(allocator, request, .{});
+        defer allocator.free(body);
         // Now use this body for the request
         return self.openai.request(.POST, "/chat/completions", .{
             .body = body,
@@ -148,10 +140,11 @@ pub const OpenAI = struct {
         }
     }
 
-    pub fn init(allocator: std.mem.Allocator, openai_config: OpenAIConfig) !OpenAI {
+    pub fn init(allocator: std.mem.Allocator, openai_config: OpenAIConfig) !*OpenAI {
         const arena = try allocator.create(std.heap.ArenaAllocator);
         arena.* = std.heap.ArenaAllocator.init(allocator);
-        var self = OpenAI{
+        var self = try allocator.create(OpenAI);
+        self.* = OpenAI{
             .allocator = allocator,
             .client = http.Client{ .allocator = arena.allocator() },
             .chat = undefined, // have to pass in self
@@ -174,11 +167,6 @@ pub const OpenAI = struct {
         const organization_id = try self.moveNullableString(openai_config.organization_id orelse env_map.get("OPENAI_ORGANIZATION_ID"));
         const project_id = try self.moveNullableString(openai_config.project_id orelse env_map.get("OPENAI_PROJECT_ID"));
 
-        std.debug.print("api_key: {?s}, length {d}\n", .{ api_key, api_key.?.len });
-        std.debug.print("base_url: {?s}, length {d}\n", .{ base_url, base_url.?.len });
-        std.debug.print("organization_id: {?s}, length {d}\n", .{ organization_id, 0 });
-        std.debug.print("project_id: {?s}, length {d}\n", .{ project_id, 0 });
-
         // init client config
         self.api_key = api_key orelse {
             return ConfigError.OpenAIAPIKeyNotSet;
@@ -190,8 +178,8 @@ pub const OpenAI = struct {
         self.project_id = project_id;
 
         // init sub components
-        self.chat = Chat.init(&self);
-        self.embeddings = Embeddings.init(&self);
+        self.chat = Chat.init(self);
+        self.embeddings = Embeddings.init(self);
 
         // client headers
         const auth_header = try std.fmt.allocPrint(self.arena.allocator(), "Bearer {s}", .{self.api_key});
@@ -200,22 +188,18 @@ pub const OpenAI = struct {
     }
 
     pub fn deinit(self: *OpenAI) void {
-        std.debug.print("Deiniting client\n", .{});
+        log.debug("Deiniting OpenAI...", .{});
         self.client.deinit();
-        std.debug.print("Deiniting chat\n", .{});
         self.chat.deinit();
-        std.debug.print("Deiniting embeddings\n", .{});
         self.embeddings.deinit();
-        std.debug.print("Deiniting arena\n", .{});
         self.arena.deinit();
-        std.debug.print("Deiniting allocator\n", .{});
         self.allocator.destroy(self.arena);
+        self.allocator.destroy(self);
+        log.debug("Deiniting OpenAI complete.", .{});
     }
 
     pub fn request(self: *const OpenAI, method: http.Method, path: []const u8, options: RequestOptions) ![]const u8 {
-        // FUTURE ME, if I don't assign the allocator to a local variable, I get segfaults- no clue why
         const allocator = self.arena.allocator();
-        std.debug.print("The type of allocator: {s}\n", .{@typeName(@TypeOf(allocator))});
         const url_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ self.base_url, path });
         defer allocator.free(url_string);
 
@@ -226,14 +210,9 @@ pub const OpenAI = struct {
         const server_header_buffer = try allocator.alloc(u8, 8 * 1024 * 4);
         defer allocator.free(server_header_buffer);
 
-        // std.debug.print("server_header_buffer\n", .{});
-
         // Create a new client for each request to avoid connection pool issues
         var client = http.Client{ .allocator = allocator };
         defer client.deinit();
-
-        // std.debug.print("client\n", .{});
-        std.debug.print("headers: {any}\n", .{self.headers});
 
         var req = try client.open(method, uri, .{
             .server_header_buffer = server_header_buffer,
