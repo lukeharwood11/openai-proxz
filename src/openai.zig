@@ -28,19 +28,6 @@ pub const ChatRequest = struct {
     messages: []const ChatMessage,
 };
 
-pub const ChatChoice = struct {
-    message: ChatMessage,
-    finish_reason: []const u8,
-    index: u64,
-};
-
-pub const ChatResponse = struct {
-    id: []const u8,
-    object: []const u8,
-    created: u64,
-    choices: []const ChatChoice,
-};
-
 pub const APIErrorResponse = struct {
     @"error": APIError,
 };
@@ -169,7 +156,7 @@ pub const OpenAI = struct {
         };
 
         // get env vars
-        var env_map = try std.process.getEnvMap(arena.allocator());
+        var env_map = try std.process.getEnvMap(self.allocator);
         defer env_map.deinit();
 
         // make all strings managed on the heap via the arena allocator
@@ -243,12 +230,12 @@ pub const OpenAI = struct {
         log.info("{s} - {s} - {d} {s}", .{ @tagName(method), url_string, @intFromEnum(req.response.status), req.response.status.phrase() orelse "None" });
 
         if (req.response.status == .ok) {
-            const response = try req.reader().readAllAlloc(allocator, 2048);
+            const response = try req.reader().readAllAlloc(allocator, 1024 * 1024);
             const parsed = try std.json.parseFromSlice(models.ChatCompletion, allocator, response, .{ .ignore_unknown_fields = true });
             defer parsed.deinit();
             return parsed.value;
         } else {
-            const response = try req.reader().readAllAlloc(allocator, 2048);
+            const response = try req.reader().readAllAlloc(allocator, 1024 * 1024);
             defer allocator.free(response);
             const parsed = try std.json.parseFromSlice(APIErrorResponse, allocator, response, .{ .ignore_unknown_fields = true });
             const value = parsed.value;
