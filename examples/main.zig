@@ -46,6 +46,8 @@ pub fn main() !void {
         return;
     };
 
+    // const api_key = "my-test-api-key";
+
     var openai = try proxz.OpenAI.init(allocator, .{
         .api_key = api_key,
     });
@@ -61,7 +63,5 @@ pub fn main() !void {
             },
         },
     });
-    // Future Luke: why don't I have to free the response?
-    // allocator.free(response);
     std.log.debug("{s}", .{response.choices[0].message.content});
 }

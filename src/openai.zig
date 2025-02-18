@@ -41,6 +41,17 @@ pub const ChatResponse = struct {
     choices: []const ChatChoice,
 };
 
+pub const APIErrorResponse = struct {
+    @"error": APIError,
+};
+
+pub const APIError = struct {
+    message: []const u8,
+    type: []const u8,
+    param: ?[]const u8 = null,
+    code: ?[]const u8 = null,
+};
+
 pub const Completions = struct {
     openai: *const OpenAI,
 
@@ -188,14 +199,12 @@ pub const OpenAI = struct {
     }
 
     pub fn deinit(self: *OpenAI) void {
-        log.debug("Deiniting OpenAI...", .{});
         self.client.deinit();
         self.chat.deinit();
         self.embeddings.deinit();
         self.arena.deinit();
         self.allocator.destroy(self.arena);
         self.allocator.destroy(self);
-        log.debug("Deiniting OpenAI complete.", .{});
     }
 
     pub fn request(self: *const OpenAI, method: http.Method, path: []const u8, options: RequestOptions) !models.ChatCompletion {
@@ -225,7 +234,7 @@ pub const OpenAI = struct {
         }
         try req.send();
         if (options.body) |body| {
-            log.debug("{s}\n", .{body});
+            log.debug("{s}", .{body});
             try req.writer().writeAll(body);
             try req.finish();
         }
@@ -235,14 +244,16 @@ pub const OpenAI = struct {
 
         if (req.response.status == .ok) {
             const response = try req.reader().readAllAlloc(allocator, 2048);
-            // defer allocator.free(response);
-            const parsed = try std.json.parseFromSliceLeaky(models.ChatCompletion, allocator, response, .{ .ignore_unknown_fields = true });
-            // TODO: free parsed stuff
-            return parsed;
+            const parsed = try std.json.parseFromSlice(models.ChatCompletion, allocator, response, .{ .ignore_unknown_fields = true });
+            defer parsed.deinit();
+            return parsed.value;
         } else {
             const response = try req.reader().readAllAlloc(allocator, 2048);
             defer allocator.free(response);
-            // return try std.json.parseFromSlice(models.ChatCompletion, allocator, response, .{});
+            const parsed = try std.json.parseFromSlice(APIErrorResponse, allocator, response, .{ .ignore_unknown_fields = true });
+            const value = parsed.value;
+            defer parsed.deinit();
+            log.err("{s} ({s}): {s}", .{ value.@"error".type, value.@"error".code orelse "None", value.@"error".message });
             return OpenAIError.BadRequest;
         }
     }
@@ -267,5 +278,5 @@ test "Completions.create" {
         },
     };
     const response = try openai.chat.completions.create(request);
-    try std.testing.expect(std.mem.eql(u8, response, ""));
+    try std.testing.expectError(OpenAIError.BadRequest, response);
 }
