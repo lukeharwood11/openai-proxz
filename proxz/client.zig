@@ -37,8 +37,9 @@ pub fn OpenAIResponse(comptime T: type) type {
     };
 }
 
-pub const ConfigError = error{
+pub const OpenAIClientError = error{
     OpenAIAPIKeyNotSet,
+    MemoryError,
 };
 
 pub const RequestOptions = struct {
@@ -70,16 +71,27 @@ pub const OpenAI = struct {
 
     pub fn moveNullableString(self: *OpenAI, str: ?[]const u8) !?[]const u8 {
         if (str) |s| {
-            return try self.arena.allocator().dupeZ(u8, s);
+            return self.arena.allocator().dupeZ(u8, s) catch {
+                return OpenAIClientError.MemoryError;
+            };
         } else {
             return null;
         }
     }
 
-    pub fn init(allocator: std.mem.Allocator, openai_config: OpenAIConfig) !*OpenAI {
-        const arena = try allocator.create(std.heap.ArenaAllocator);
+    pub fn init(allocator: std.mem.Allocator, openai_config: OpenAIConfig) OpenAIClientError!*OpenAI {
+        const arena = allocator.create(std.heap.ArenaAllocator) catch {
+            return OpenAIClientError.MemoryError;
+        };
         arena.* = std.heap.ArenaAllocator.init(allocator);
-        var self = try allocator.create(OpenAI);
+        errdefer blk: {
+            arena.deinit();
+            allocator.destroy(arena);
+            break :blk;
+        }
+        var self = allocator.create(OpenAI) catch {
+            return OpenAIClientError.MemoryError;
+        };
         self.* = OpenAI{
             .allocator = allocator,
             .client = http.Client{ .allocator = arena.allocator() },
@@ -92,9 +104,12 @@ pub const OpenAI = struct {
             .headers = undefined, // set below
             .arena = arena,
         };
+        errdefer allocator.destroy(self);
 
         // get env vars
-        var env_map = try std.process.getEnvMap(self.allocator);
+        var env_map = std.process.getEnvMap(self.allocator) catch {
+            return OpenAIClientError.MemoryError;
+        };
         defer env_map.deinit();
 
         // make all strings managed on the heap via the arena allocator
@@ -105,7 +120,7 @@ pub const OpenAI = struct {
 
         // init client config
         self.api_key = api_key orelse {
-            return ConfigError.OpenAIAPIKeyNotSet;
+            return OpenAIClientError.OpenAIAPIKeyNotSet;
         };
         self.base_url = base_url orelse {
             unreachable;
@@ -118,7 +133,9 @@ pub const OpenAI = struct {
         self.embeddings = embeddings.Embeddings.init(self);
 
         // client headers
-        const auth_header = try std.fmt.allocPrint(self.arena.allocator(), "Bearer {s}", .{self.api_key});
+        const auth_header = std.fmt.allocPrint(self.arena.allocator(), "Bearer {s}", .{self.api_key}) catch {
+            return OpenAIClientError.MemoryError;
+        };
         self.headers = .{ .authorization = .{ .override = auth_header }, .content_type = .{ .override = "application/json" } };
         return self;
     }
@@ -132,6 +149,7 @@ pub const OpenAI = struct {
         self.allocator.destroy(self);
     }
 
+    /// Makes a request to the OpenAI base_url provided to the client, with the corresponding method, path, and options provided
     pub fn request(self: *const OpenAI, method: http.Method, path: []const u8, options: RequestOptions, comptime T: type) !OpenAIResponse(T) {
         const allocator = self.allocator;
         const url_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ self.base_url, path });
