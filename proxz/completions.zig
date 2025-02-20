@@ -57,9 +57,12 @@ pub const ChatCompletion = struct {
     system_fingerprint: ?[]const u8 = null,
 };
 
+/// A struct that contains methods for creating chat completions
 pub const Completions = struct {
     openai: *const client.OpenAI,
 
+    /// Initializes a new Completions struct
+    /// This should only be called once per OpenAI instance
     pub fn init(openai: *const client.OpenAI) Completions {
         return Completions{
             .openai = openai,
@@ -68,6 +71,23 @@ pub const Completions = struct {
 
     pub fn deinit(_: *Completions) void {}
 
+    /// Creates a chat completion request and returns a Response(ChatCompletion)
+    /// The caller is also responsible for calling deinit() on the response to free all allocated memory
+    ///
+    /// Example:
+    /// response = openai.chat.completions.create(.{
+    ///     .model = "gpt-4o",
+    ///     .messages = &[_]ChatMessage{
+    ///         .{
+    ///             .role = "user",
+    ///             .content = "Hello, world!",
+    ///         },
+    ///     },
+    /// });
+    /// defer response.deinit();
+    /// const chat_completion: ChatCompletion = response.value;
+    ///
+    /// std.debug.print("{s}", .{chat_completion.choices[0].message.content});
     pub fn create(self: *Completions, request: ChatRequest) !models.Response(ChatCompletion) {
         const allocator = self.openai.arena.allocator();
         const body = try std.json.stringifyAlloc(allocator, request, .{});

@@ -5,3 +5,4 @@ pub const embeddings = @import("embeddings.zig");
 
 pub const OpenAI = client.OpenAI;
 pub const OpenAIConfig = client.OpenAIConfig;
+pub const ChatMessage = completions.ChatMessage;

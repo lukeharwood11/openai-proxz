@@ -9,6 +9,8 @@ pub fn Response(comptime T: type) type {
 
         const Self = @This();
 
+        /// Parses the response from the API into a struct of type T, which is accessible via the .value field
+        /// The caller is also responsible for calling deinit() on the response to free all allocated memory
         pub fn parse(allocator: std.mem.Allocator, source: []const u8) !Self {
             const parsed = try json.parseFromSlice(T, allocator, source, .{ .ignore_unknown_fields = true, .allocate = .alloc_always });
             return Self{
@@ -18,6 +20,7 @@ pub fn Response(comptime T: type) type {
             };
         }
 
+        /// Deinitializes all memory allocated for the response
         pub fn deinit(self: *const Self) void {
             if (self.parsed) |parsed| {
                 parsed.deinit();
