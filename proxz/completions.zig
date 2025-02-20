@@ -22,7 +22,8 @@ pub const ChatRequest = struct {
     /// Optional: Constrains effort on reasoning for reasoning models (o1 and o3-mini models only)
     /// Supported values: "low", "medium", "high"
     /// Defaults to "medium"
-    reasoning_effort: ?[]const u8 = null,
+    /// TODO: implement logic for removing this parameter when it is not supported
+    // reasoning_effort: ?[]const u8 = null,
 
     /// Optional: Set of key-value pairs for storing additional information
     /// TODO: implement metadata parameter as StringHashMap
@@ -91,7 +92,8 @@ pub const ChatRequest = struct {
 
     /// Optional: Enable streaming of partial message deltas
     /// Defaults to false
-    stream: ?bool = false,
+    /// TODO: implement stream parameter
+    // stream: ?bool = false,
 
     /// Optional: Temperature for sampling (0.0-2.0)
     /// Higher values increase randomness
@@ -112,7 +114,8 @@ pub const ChatRequest = struct {
 
     /// Optional: Enable parallel function calling during tool use
     /// Defaults to true
-    parallel_tool_calls: bool = true,
+    /// TODO: implement parallel_tool_calls
+    // parallel_tool_calls: bool = true,
 
     /// Optional: Unique identifier for end-user
     user: ?[]const u8 = null,
