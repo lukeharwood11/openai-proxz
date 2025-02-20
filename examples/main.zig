@@ -54,14 +54,16 @@ pub fn main() !void {
 
     defer openai.deinit();
 
-    const response = try openai.chat.completions.create(.{
+    var response = try openai.chat.completions.create(.{
+        // gpt-4 is deprecated, use gpt-4o instead (which is valid)
         .model = "gpt-4o",
-        .messages = &.{
+        .messages = &[_]proxz.completions.ChatMessage{
             .{
                 .role = "user",
                 .content = "Hello, world!",
             },
         },
     });
-    std.log.debug("{s}", .{response.choices[0].message.content});
+    defer response.deinit();
+    std.log.debug("{s}", .{response.value.choices[0].message.content});
 }

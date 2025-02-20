@@ -1,31 +1,15 @@
-/// We want to build this out so others can call
-/// ```zig
-/// const proxz = @import("proxz");
-/// const openai = proxz.openai
-///
-/// ...
-/// client = openai.OpenAI.init(allocator);
-/// ```
 const std = @import("std");
 const http = std.http;
 const log = std.log;
 const models = @import("models.zig");
+const chat = @import("chat.zig");
+const embeddings = @import("embeddings.zig");
 
 pub const OpenAIConfig = struct {
     api_key: ?[]const u8 = null,
     base_url: ?[]const u8 = null,
     organization_id: ?[]const u8 = null,
     project_id: ?[]const u8 = null,
-};
-
-pub const ChatMessage = struct {
-    role: []const u8,
-    content: []const u8,
-};
-
-pub const ChatRequest = struct {
-    model: []const u8,
-    messages: []const ChatMessage,
 };
 
 pub const APIErrorResponse = struct {
@@ -39,65 +23,19 @@ pub const APIError = struct {
     code: ?[]const u8 = null,
 };
 
-pub const Completions = struct {
-    openai: *const OpenAI,
+pub fn OpenAIResponse(comptime T: type) type {
+    return union(enum) {
+        ok: models.Response(T),
+        err: models.Response(APIErrorResponse),
 
-    pub fn init(openai: *const OpenAI) Completions {
-        return Completions{
-            .openai = openai,
-        };
-    }
-
-    pub fn deinit(_: *Completions) void {}
-
-    pub fn create(self: *Completions, request: ChatRequest) !models.ChatCompletion {
-        // Future Luke: no matter what allocator I used, it corrupts self.openai.base_url
-        // Past Luke: don't reference something that lives on the stack, idiot.
-        const allocator = self.openai.arena.allocator();
-        const body = try std.json.stringifyAlloc(allocator, request, .{});
-        defer allocator.free(body);
-        // Now use this body for the request
-        return self.openai.request(.POST, "/chat/completions", .{
-            .body = body,
-        });
-    }
-};
-
-pub const Chat = struct {
-    openai: *const OpenAI,
-    completions: Completions,
-
-    pub fn init(openai: *const OpenAI) Chat {
-        return Chat{
-            .openai = openai,
-            .completions = Completions.init(openai),
-        };
-    }
-
-    pub fn create(self: *Chat, request: ChatRequest) !void {
-        _ = self;
-        _ = request;
-    }
-
-    pub fn createStream(self: *Chat, request: ChatRequest) !void {
-        _ = self;
-        _ = request;
-    }
-
-    pub fn deinit(_: *Chat) void {}
-};
-
-pub const Embeddings = struct {
-    openai: *const OpenAI,
-
-    pub fn init(openai: *const OpenAI) Embeddings {
-        return Embeddings{
-            .openai = openai,
-        };
-    }
-
-    pub fn deinit(_: *Embeddings) void {}
-};
+        pub fn deinit(self: *@This()) void {
+            switch (self.*) {
+                .ok => |*ok| ok.deinit(),
+                .err => |*err| err.deinit(),
+            }
+        }
+    };
+}
 
 pub const ConfigError = error{
     OpenAIAPIKeyNotSet,
@@ -121,8 +59,8 @@ pub const OpenAIError = error{
 pub const OpenAI = struct {
     allocator: std.mem.Allocator,
     client: http.Client,
-    chat: Chat,
-    embeddings: Embeddings,
+    chat: chat.Chat,
+    embeddings: embeddings.Embeddings,
     api_key: []const u8,
     base_url: []const u8,
     organization_id: ?[]const u8,
@@ -176,8 +114,8 @@ pub const OpenAI = struct {
         self.project_id = project_id;
 
         // init sub components
-        self.chat = Chat.init(self);
-        self.embeddings = Embeddings.init(self);
+        self.chat = chat.Chat.init(self);
+        self.embeddings = embeddings.Embeddings.init(self);
 
         // client headers
         const auth_header = try std.fmt.allocPrint(self.arena.allocator(), "Bearer {s}", .{self.api_key});
@@ -194,8 +132,8 @@ pub const OpenAI = struct {
         self.allocator.destroy(self);
     }
 
-    pub fn request(self: *const OpenAI, method: http.Method, path: []const u8, options: RequestOptions) !models.ChatCompletion {
-        const allocator = self.arena.allocator();
+    pub fn request(self: *const OpenAI, method: http.Method, path: []const u8, options: RequestOptions, comptime T: type) !OpenAIResponse(T) {
+        const allocator = self.allocator;
         const url_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ self.base_url, path });
         defer allocator.free(url_string);
 
@@ -227,43 +165,15 @@ pub const OpenAI = struct {
         }
         try req.wait();
 
-        log.info("{s} - {s} - {d} {s}", .{ @tagName(method), url_string, @intFromEnum(req.response.status), req.response.status.phrase() orelse "None" });
+        const body = try req.reader().readAllAlloc(allocator, 10 * 1024 * 1024);
+        defer allocator.free(body);
 
-        if (req.response.status == .ok) {
-            const response = try req.reader().readAllAlloc(allocator, 1024 * 1024);
-            const parsed = try std.json.parseFromSlice(models.ChatCompletion, allocator, response, .{ .ignore_unknown_fields = true });
-            defer parsed.deinit();
-            return parsed.value;
-        } else {
-            const response = try req.reader().readAllAlloc(allocator, 1024 * 1024);
-            defer allocator.free(response);
-            const parsed = try std.json.parseFromSlice(APIErrorResponse, allocator, response, .{ .ignore_unknown_fields = true });
-            const value = parsed.value;
-            defer parsed.deinit();
-            log.err("{s} ({s}): {s}", .{ value.@"error".type, value.@"error".code orelse "None", value.@"error".message });
-            return OpenAIError.BadRequest;
+        if (req.response.status != .ok) {
+            const err = try models.Response(APIErrorResponse).parse(allocator, body);
+            return OpenAIResponse(T){ .err = err };
         }
+
+        const response = try models.Response(T).parse(allocator, body);
+        return OpenAIResponse(T){ .ok = response };
     }
 };
-
-test "OpenAI.init no api key" {
-    const allocator = std.testing.allocator;
-    const openai = OpenAI.init(allocator, .{});
-    try std.testing.expectError(ConfigError.OpenAIAPIKeyNotSet, openai);
-}
-
-test "Completions.create" {
-    const allocator = std.testing.allocator;
-    var openai = try OpenAI.init(allocator, .{
-        .api_key = "my_api_key",
-    });
-    defer openai.deinit();
-    const request = ChatRequest{
-        .model = "gpt-4o",
-        .messages = &[_]ChatMessage{
-            .{ .role = "user", .content = "Hello, world!" },
-        },
-    };
-    const response = try openai.chat.completions.create(request);
-    try std.testing.expectError(OpenAIError.BadRequest, response);
-}
