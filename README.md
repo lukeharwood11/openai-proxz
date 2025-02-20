@@ -1,3 +1,5 @@
+[static](https://img.shields.io/badge/zig-0.13.0-orange)
+
 # ProxZ
 
 An OpenAI API library for the Zig programming language!
