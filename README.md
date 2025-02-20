@@ -1,4 +1,5 @@
-![static](https://img.shields.io/badge/zig-0.13.0-orange)
+![Static Badge](https://img.shields.io/badge/zig-0.13.0?logo=zig&logoColor=%23F7A41D)
+
 
 # ProxZ
 
