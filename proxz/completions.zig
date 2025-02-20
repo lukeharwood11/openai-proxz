@@ -207,6 +207,9 @@ pub const Completions = struct {
         switch (response) {
             .err => |err| {
                 log.err("{s} ({s}): {s}", .{ err.value.@"error".type, err.value.@"error".code orelse "None", err.value.@"error".message });
+                // TODO: figure out how we want to handle errors
+                // for now just return a generic error
+                defer err.deinit();
                 return client.OpenAIError.BadRequest;
             },
             .ok => |ok| {
