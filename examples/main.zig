@@ -14,7 +14,6 @@ pub fn main() !void {
     defer openai.deinit();
 
     var response = try openai.chat.completions.create(.{
-        // gpt-4 is deprecated, use gpt-4o instead (which is valid)
         .model = "gpt-4o",
         .messages = &[_]ChatMessage{
             .{
@@ -25,5 +24,6 @@ pub fn main() !void {
     });
     // This will free all the memory allocated for the response
     defer response.deinit();
-    std.log.debug("{s}", .{response.value.choices[0].message.content});
+    const completion = response.data;
+    std.log.debug("{s}", .{completion.choices[0].message.content});
 }

@@ -180,9 +180,9 @@ pub const Completions = struct {
     pub fn deinit(_: *Completions) void {}
 
     /// Creates a chat completion request and returns a Response(ChatCompletion)
-    /// The caller is also responsible for calling deinit() on the response to free all allocated memory
-    ///
-    /// Example:
+    /// The caller is also responsible for calling deinit() on the response to free all allocated memory.
+    /// ### Example:
+    /// ```zig
     /// response = openai.chat.completions.create(.{
     ///     .model = "gpt-4o",
     ///     .messages = &[_]ChatMessage{
@@ -193,9 +193,9 @@ pub const Completions = struct {
     ///     },
     /// });
     /// defer response.deinit();
-    /// const chat_completion: ChatCompletion = response.value;
-    ///
+    /// const chat_completion: ChatCompletion = response.data;
     /// std.debug.print("{s}", .{chat_completion.choices[0].message.content});
+    /// ```
     pub fn create(self: *Completions, request: ChatRequest) !models.Response(ChatCompletion) {
         const allocator = self.openai.arena.allocator();
         const body = try std.json.stringifyAlloc(allocator, request, .{});
@@ -206,7 +206,7 @@ pub const Completions = struct {
         }, ChatCompletion);
         switch (response) {
             .err => |err| {
-                log.err("{s} ({s}): {s}", .{ err.value.@"error".type, err.value.@"error".code orelse "None", err.value.@"error".message });
+                log.err("{s} ({s}): {s}", .{ err.data.@"error".type, err.data.@"error".code orelse "None", err.data.@"error".message });
                 // TODO: figure out how we want to handle errors
                 // for now just return a generic error
                 defer err.deinit();

@@ -1,6 +1,5 @@
 ![Static Badge](https://img.shields.io/badge/zig-0.13.0-%23F7A41D?logo=zig&logoColor=%23F7A41D)
 
-
 # ProxZ
 
 An OpenAI API library for the Zig programming language!
@@ -40,6 +39,7 @@ defer openai.deinit();
 ```
 
 ### Chat Completions
+
 ```zig
 const ChatMessage = proxz.ChatMessage;
 
@@ -54,9 +54,16 @@ var response = try openai.chat.completions.create(.{
 });
 // This will free all the memory allocated for the response
 defer response.deinit();
-std.log.debug("{s}", .{response.value.choices[0].message.content});
+const completions = response.response_data;
+std.log.debug("{s}", .{completions.choices[0].message.content});
 ```
 
 ## Contributions
 
 Contributions are welcome and encouraged! Submit an issue for any bugs/feature requests and open a PR if you tackled one of them!
+
+## Building Docs
+
+```bash
+zig build-lib -femit-docs proxz/proxz.zig
+```

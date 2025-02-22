@@ -1,20 +1,29 @@
 const std = @import("std");
 const json = std.json;
 
+/// An OpenAI API response wrapper, returns a struct with the following fields:
+/// ```
+/// data: T,
+/// parsed: ?json.Parsed(T) = null,
+/// allocator: std.mem.Allocator,
+/// ```
+/// The caller is responsible of calling `deinit` on this object to clean up resources
 pub fn Response(comptime T: type) type {
     return struct {
-        value: T,
+        /// The response payload
+        data: T,
+        /// The backing json Parsed object, that contains all memory created for this object
         parsed: ?json.Parsed(T) = null,
         allocator: std.mem.Allocator,
 
         const Self = @This();
 
-        /// Parses the response from the API into a struct of type T, which is accessible via the .value field
+        /// Parses the response from the API into a struct of type T, which is accessible via the .data field
         /// The caller is also responsible for calling deinit() on the response to free all allocated memory
         pub fn parse(allocator: std.mem.Allocator, source: []const u8) !Self {
             const parsed = try json.parseFromSlice(T, allocator, source, .{ .ignore_unknown_fields = true, .allocate = .alloc_always });
             return Self{
-                .value = parsed.value,
+                .data = parsed.value,
                 .parsed = parsed,
                 .allocator = allocator,
             };
