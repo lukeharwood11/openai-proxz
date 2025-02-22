@@ -16,6 +16,9 @@ const models = @import("models.zig");
 const chat = @import("chat.zig");
 const embeddings = @import("embeddings.zig");
 
+const INITIAL_RETRY_DELAY = 0.5;
+const MAX_RETRY_DELAY = 8;
+
 /// Options to be passed through to the `OpenAI.init` function.
 pub const OpenAIConfig = struct {
     /// Your OpenAI API key. If left null, it will attempt to read from the `OPENAI_API_KEY` environment variable.
@@ -96,6 +99,7 @@ pub const OpenAI = struct {
     headers: http.Client.Request.Headers,
     extra_headers: []const http.Header,
     arena: *std.heap.ArenaAllocator,
+    max_retries: usize,
 
     fn moveNullableString(self: *OpenAI, str: ?[]const u8) !?[]const u8 {
         if (str) |s| {
@@ -134,6 +138,7 @@ pub const OpenAI = struct {
             .headers = undefined, // set below
             .extra_headers = &.{},
             .arena = arena,
+            .max_retries = openai_config.max_retries,
         };
         errdefer allocator.destroy(self);
 
@@ -216,34 +221,46 @@ pub const OpenAI = struct {
         // Create a new client for each request to avoid connection pool issues
         var client = http.Client{ .allocator = allocator };
         defer client.deinit();
+        var backoff: f32 = INITIAL_RETRY_DELAY;
 
-        var req = try client.open(method, uri, .{
-            .server_header_buffer = server_header_buffer,
-            .headers = self.headers,
-            .extra_headers = self.extra_headers,
-        });
-        defer req.deinit();
+        for (0..self.max_retries + 1) |attempt| {
+            var req = try client.open(method, uri, .{
+                .server_header_buffer = server_header_buffer,
+                .headers = self.headers,
+                .extra_headers = self.extra_headers,
+            });
+            defer req.deinit();
 
-        if (options.body) |body| {
-            req.transfer_encoding = .{ .content_length = body.len };
+            if (options.body) |body| {
+                req.transfer_encoding = .{ .content_length = body.len };
+            }
+            try req.send();
+            if (options.body) |body| {
+                log.debug("{s}", .{body});
+                try req.writer().writeAll(body);
+                try req.finish();
+            }
+            try req.wait();
+
+            const body = try req.reader().readAllAlloc(allocator, 1024 * 1024);
+            defer allocator.free(body);
+
+            if (req.response.status != .ok) {
+                if (attempt != self.max_retries and @intFromEnum(req.response.status) >= 429) {
+                    // retry on 429, 500, and 503
+                    log.info("Retrying ({d}/{d}) after {d} seconds.", .{ attempt + 1, self.max_retries, backoff });
+                    std.time.sleep(@as(u64, @intFromFloat(backoff * std.time.ns_per_s)));
+                    backoff = if (backoff * 2 <= MAX_RETRY_DELAY) backoff * 2 else MAX_RETRY_DELAY;
+                } else {
+                    const err = try models.Response(APIErrorResponse).parse(allocator, body);
+                    return OpenAIResponse(T){ .err = err };
+                }
+            } else {
+                const response = try models.Response(T).parse(allocator, body);
+                return OpenAIResponse(T){ .ok = response };
+            }
         }
-        try req.send();
-        if (options.body) |body| {
-            log.debug("{s}", .{body});
-            try req.writer().writeAll(body);
-            try req.finish();
-        }
-        try req.wait();
-
-        const body = try req.reader().readAllAlloc(allocator, 1024 * 1024);
-        defer allocator.free(body);
-
-        if (req.response.status != .ok) {
-            const err = try models.Response(APIErrorResponse).parse(allocator, body);
-            return OpenAIResponse(T){ .err = err };
-        }
-
-        const response = try models.Response(T).parse(allocator, body);
-        return OpenAIResponse(T){ .ok = response };
+        // max_retries must be >= 0 (since it's usize) and loop condition is 0..max_retries+1
+        unreachable;
     }
 };
