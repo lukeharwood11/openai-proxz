@@ -54,7 +54,7 @@ var response = try openai.chat.completions.create(.{
 });
 // This will free all the memory allocated for the response
 defer response.deinit();
-const completions = response.response_data;
+const completions = response.data;
 std.log.debug("{s}", .{completions.choices[0].message.content});
 ```
 
