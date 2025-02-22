@@ -10,7 +10,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // make sure you have an OPENAI_API_KEY environment variable set!
-    var openai = try OpenAI.init(allocator, .{ .api_key = "my-test-api-key" });
+    var openai = try OpenAI.init(allocator, .{});
     defer openai.deinit();
 
     var response = try openai.chat.completions.create(.{
