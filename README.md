@@ -14,8 +14,8 @@ An OpenAI API library for the Zig programming language!
 
 ## Installation
 
-!!! note "note"
-    This is only compatible with zig version 0.13.0 at this time.
+> [!NOTE]  
+> This is only compatible with zig version 0.13.0 at this time.
 
 To install `proxz`, run
 
