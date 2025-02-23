@@ -13,7 +13,7 @@ pub fn main() !void {
     var openai = try OpenAI.init(allocator, .{ .api_key = "test" });
     defer openai.deinit();
 
-    const request: proxz.completions.ChatCompletionsRequest = .{
+    var response = try openai.chat.completions.create(.{
         .model = "gpt-4o",
         .messages = &[_]ChatMessage{
             .{
@@ -21,13 +21,9 @@ pub fn main() !void {
                 .content = "Hello, world!",
             },
         },
-    };
-
-    try request.getParams(allocator);
-
-    // var response = try openai.chat.completions.create(.{});
-    // // This will free all the memory allocated for the response
-    // defer response.deinit();
-    // const completion = response.data;
-    // std.log.debug("{s}", .{completion.choices[0].message.content});
+    });
+    // This will free all the memory allocated for the response
+    defer response.deinit();
+    const completion = response.data;
+    std.log.debug("{s}", .{completion.choices[0].message.content});
 }

@@ -131,13 +131,9 @@ pub const ChatCompletionsRequest = struct {
     /// Optional: Unique identifier for end-user
     user: ?[]const u8 = null,
 
-    /// Returns the payload of a chat completions request in json format
-    pub fn getParams(self: *const ChatCompletionsRequest, allocator: std.mem.Allocator) !void {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        const alloc = arena.allocator();
-        defer arena.deinit();
-        var object = std.json.ObjectMap.init(alloc);
-        defer object.deinit();
+    /// Custom serialization method, to remove null fields
+    pub fn jsonStringify(self: ChatCompletionsRequest, ws: anytype) !void {
+        try ws.beginObject();
         inline for (std.meta.fields(ChatCompletionsRequest)) |field| {
             const val = @field(self, field.name);
             const info = @typeInfo(@TypeOf(val));
@@ -145,33 +141,18 @@ pub const ChatCompletionsRequest = struct {
                 // can't compare null if not .Optional
                 .Optional => {
                     if (val != null) {
-                        // TODO: fix this grossness
-                        const s = try std.json.stringifyAlloc(
-                            alloc,
-                            val,
-                            .{},
-                        );
-                        const parsed = try std.json.parseFromSlice(std.json.Value, alloc, s, .{});
-                        try object.put(field.name, parsed.value);
+                        try ws.objectField(field.name);
+                        try ws.write(val);
                     }
                 },
                 else => {
-                    // TODO: fix this grossness
-                    const s = try std.json.stringifyAlloc(
-                        alloc,
-                        val,
-                        .{},
-                    );
-                    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, s, .{});
-                    try object.put(field.name, parsed.value);
+                    try ws.objectField(field.name);
+                    try ws.write(val);
                 },
             }
             // std.debug.print("{s} - {s}: {any}\n\n", .{ @typeName(field.type), field.name, @field(self, field.name) });
         }
-        const json_value = std.json.Value{ .object = object };
-        const str = try std.json.stringifyAlloc(allocator, json_value, .{});
-        defer allocator.free(str);
-        std.debug.print("{s}", .{str});
+        try ws.endObject();
     }
 };
 
