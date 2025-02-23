@@ -19,20 +19,30 @@ pub fn main() !void {
     var openai = try OpenAI.init(allocator, .{});
     defer openai.deinit();
 
-    var response = try openai.models.retrieve("gpt-4o");
-
-    // var response = try openai.chat.completions.create(.{
-    //     .model = "gpt-4o",
-    //     .messages = &[_]ChatMessage{
-    //         .{
-    //             .role = "user",
-    //             .content = "Hello, world!",
-    //         },
-    //     },
-    // });
+    // var response = try openai.models.retrieve("gpt-4o");
+    var chat_response = try openai.chat.completions.create(.{
+        .model = "gpt-4o",
+        .messages = &[_]ChatMessage{
+            .{
+                .role = "user",
+                .content = "Hello, world!",
+            },
+        },
+    });
     // This will free all the memory allocated for the response
-    defer response.deinit();
-    const completion = response.data;
-    // std.log.debug("{s}", .{completion.choices[0].message.content});
-    std.log.debug("{s}", .{completion.owned_by});
+    defer chat_response.deinit();
+    const completion = chat_response.data;
+    std.log.debug("{s}\n", .{completion.choices[0].message.content});
+
+    const inputs = [_][]const u8{ "Hello", "Foo", "Bar" };
+    const embeddings_response = try openai.embeddings.create(.{
+        .model = "text-embedding-3-small",
+        .input = &inputs,
+    });
+    defer embeddings_response.deinit();
+    const embeddings = embeddings_response.data;
+    std.log.debug("Model: {s}\nNumber of Embeddings: {d}\n", .{
+        embeddings.model,
+        embeddings.data.len,
+    });
 }

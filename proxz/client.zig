@@ -77,26 +77,11 @@ pub const OpenAIConfig = struct {
     max_retries: usize = 3,
 };
 
-pub const APIErrorResponse = struct {
+/// OpenAI Error Response Body.
+/// Currently not exposed.
+const APIErrorResponse = struct {
     @"error": APIError,
 };
-
-/// A wrapper for all OpenAI responses, whether successful or otherwise.
-/// This allows the caller to determine whether the call was successful or not.
-/// This is an internal API level struct.
-fn OpenAIResponse(comptime T: type) type {
-    return union(enum) {
-        ok: Response(T),
-        err: Response(APIErrorResponse),
-
-        pub fn deinit(self: *@This()) void {
-            switch (self.*) {
-                .ok => |*ok| ok.deinit(),
-                .err => |*err| err.deinit(),
-            }
-        }
-    };
-}
 
 /// Errors pertaining to OpenAI struct creation
 pub const OpenAIClientError = error{
@@ -109,17 +94,58 @@ const RequestOptions = struct {
     body: ?[]const u8 = null,
 };
 
-/// Different OpenAI API errors
+/// Different OpenAI API errors:
+/// https://platform.openai.com/docs/guides/error-codes
 pub const OpenAIError = error{
+    /// 400 - Bad Request
+    /// Generic bad request error
     BadRequest,
-    Unauthorized,
-    PaymentRequired,
-    Forbidden,
+
+    /// 404 - Not Found
+    /// Model/resource isn't found
     NotFound,
-    MethodNotAllowed,
-    TooManyRequests,
-    InternalServerError,
+
+    /// 401 - Invalid Authentication
+    /// Cause: Invalid API key, incorrect API key, or missing organization membership
+    /// Solution: Verify API key is correct, clear cache, or ensure organization membership
+    InvalidAuthentication,
+
+    /// 403 - Not Supported
+    /// Cause: Accessing API from an unsupported country/region/territory
+    /// Solution: See documentation for supported regions
+    NotSupported,
+
+    /// 429 - Rate Limit
+    /// Cause: Too many requests or exceeded quota
+    /// Solution: Pace requests according to rate limits or upgrade plan/billing
+    RateLimit,
+
+    /// 500 - Server Error
+    /// Cause: Internal server error
+    /// Solution: Retry after waiting, contact support if persistent
+    ServerError,
+
+    /// 503 - Service Overloaded
+    /// Cause: Server is currently overloaded
+    /// Solution: Retry request after waiting
+    ServiceOverloaded,
+
+    /// Unknown error occurred
+    Unknown,
 };
+
+pub fn getErrorFromStatus(status: std.http.Status) OpenAIError {
+    return switch (status) {
+        .bad_request => OpenAIError.BadRequest,
+        .not_found => OpenAIError.NotFound,
+        .unauthorized => OpenAIError.InvalidAuthentication,
+        .forbidden => OpenAIError.NotSupported,
+        .too_many_requests => OpenAIError.RateLimit,
+        .internal_server_error => OpenAIError.ServerError,
+        .service_unavailable => OpenAIError.ServiceOverloaded,
+        else => OpenAIError.Unknown,
+    };
+}
 
 /// A general purpose openai client that initializes all base parameters (API key, Base URL, Org ID, Project ID)
 /// and through which all requests should be made through. The creator must call `deinit` to clean up all resources created
@@ -259,14 +285,14 @@ pub const OpenAI = struct {
     ///     .json = body,
     /// }, ResponseBodyStruct); // pass in null for no response body
     /// ````
-    pub fn request(self: *const OpenAI, options: OpenAIRequest, comptime ResponseType: ?type) !if (ResponseType) |T| OpenAIResponse(T) else void {
+    pub fn request(self: *const OpenAI, options: OpenAIRequest, comptime ResponseType: ?type) !if (ResponseType) |T| Response(T) else void {
         const method = options.method;
         const path = options.path;
         const allocator = self.allocator;
         const url_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ self.base_url, path });
         defer allocator.free(url_string);
 
-        log.debug("{s} - {s}", .{ @tagName(method), url_string });
+        // log.debug("{s} - {s}", .{ @tagName(method), url_string });
 
         const uri = try std.Uri.parse(url_string);
 
@@ -300,25 +326,27 @@ pub const OpenAI = struct {
             defer allocator.free(body);
 
             const status_int = @intFromEnum(req.response.status);
+            log.info("{s} - {s} - {d} {s}", .{ @tagName(method), url_string, status_int, req.response.status.phrase() orelse "Unknown" });
             if (status_int < 200 or status_int >= 300) {
                 if (attempt != self.max_retries and @intFromEnum(req.response.status) >= 429) {
                     // retry on 429, 500, and 503
-                    log.info("({d} {s}) - Retrying ({d}/{d}) after {d} seconds.", .{ status_int, @tagName(req.response.status), attempt + 1, self.max_retries, backoff });
+                    log.info("Retrying ({d}/{d}) after {d} seconds.", .{ attempt + 1, self.max_retries, backoff });
                     std.time.sleep(@as(u64, @intFromFloat(backoff * std.time.ns_per_s)));
                     backoff = if (backoff * 2 <= MAX_RETRY_DELAY) backoff * 2 else MAX_RETRY_DELAY;
                 } else {
-                    if (ResponseType) |T| {
-                        const err = try Response(APIErrorResponse).parse(allocator, body);
-                        return OpenAIResponse(T){ .err = err };
-                    } else {
-                        return;
-                    }
+                    const err = Response(APIErrorResponse).parse(allocator, body) catch {
+                        log.err("{s}", .{body});
+                        // if we can't parse the error, it was a bad request.
+                        return OpenAIError.BadRequest;
+                    };
+                    defer err.deinit();
+                    log.err("{s} ({s}): {s}", .{ err.data.@"error".type, err.data.@"error".code orelse "None", err.data.@"error".message });
+                    return getErrorFromStatus(req.response.status);
                 }
             } else {
-                log.info("{s} - {s} - {d} {s}", .{ @tagName(method), url_string, status_int, req.response.status.phrase() orelse "Unknown" });
                 if (ResponseType) |T| {
                     const response = try Response(T).parse(allocator, body);
-                    return OpenAIResponse(T){ .ok = response };
+                    return response;
                 } else {
                     return;
                 }

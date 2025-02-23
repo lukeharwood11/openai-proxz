@@ -19,37 +19,19 @@ pub const Models = struct {
         _ = self;
     }
 
+    /// Lists available models.
+    /// Caller is responsible for calling `deinit` on the returned `client.Response` object to clean up all memeory
     pub fn list(self: *const Models) !openai.Response(ListModelResponse) {
         const response = try self.client.request(.{ .method = .GET, .path = "/models" }, ListModelResponse);
-        switch (response) {
-            .err => |err| {
-                log.err("{s} ({s}): {s}", .{ err.data.@"error".type, err.data.@"error".code orelse "None", err.data.@"error".message });
-                // TODO: figure out how we want to handle errors
-                // for now just return a generic error
-                defer err.deinit();
-                return openai.OpenAIError.BadRequest;
-            },
-            .ok => |ok| {
-                return ok;
-            },
-        }
+        return response;
     }
 
+    /// Retrieves model information for provided model ID (e.g. "gpt-4o").
+    /// Caller is responsible for calling `deinit` on the returned `client.Response` object to clean up all memeory
     pub fn retrieve(self: *const Models, id: []const u8) !openai.Response(Object) {
         const path = try std.fmt.allocPrint(self.client.allocator, "/models/{s}", .{id});
         defer self.client.allocator.free(path);
         const response = try self.client.request(.{ .method = .GET, .path = path }, Object);
-        switch (response) {
-            .err => |err| {
-                log.err("{s} ({s}): {s}", .{ err.data.@"error".type, err.data.@"error".code orelse "None", err.data.@"error".message });
-                // TODO: figure out how we want to handle errors
-                // for now just return a generic error
-                defer err.deinit();
-                return openai.OpenAIError.BadRequest;
-            },
-            .ok => |ok| {
-                return ok;
-            },
-        }
+        return response;
     }
 };

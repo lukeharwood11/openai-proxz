@@ -236,17 +236,6 @@ pub const Completions = struct {
             .path = "/chat/completions",
             .json = body,
         }, ChatCompletion);
-        switch (response) {
-            .err => |err| {
-                log.err("{s} ({s}): {s}", .{ err.data.@"error".type, err.data.@"error".code orelse "None", err.data.@"error".message });
-                // TODO: figure out how we want to handle errors
-                // for now just return a generic error
-                defer err.deinit();
-                return client.OpenAIError.BadRequest;
-            },
-            .ok => |ok| {
-                return ok;
-            },
-        }
+        return response;
     }
 };
