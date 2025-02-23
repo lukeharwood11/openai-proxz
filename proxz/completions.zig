@@ -131,7 +131,7 @@ pub const ChatCompletionsRequest = struct {
     /// Optional: Unique identifier for end-user
     user: ?[]const u8 = null,
 
-    /// Custom serialization method, to remove null fields
+    /// Custom serialization method, to remove `null` fields.
     pub fn jsonStringify(self: ChatCompletionsRequest, ws: anytype) !void {
         try ws.beginObject();
         inline for (std.meta.fields(ChatCompletionsRequest)) |field| {
@@ -190,6 +190,9 @@ pub const Choice = struct {
     finish_reason: []const u8,
 };
 
+// A chat/completion payload.
+//
+// TODO: experiment with `jsonParse` to allocate memory with the arena allocator.
 pub const ChatCompletion = struct {
     id: []const u8,
     object: []const u8,
@@ -235,9 +238,10 @@ pub const Completions = struct {
         const allocator = self.openai.arena.allocator();
         const body = try std.json.stringifyAlloc(allocator, request, .{});
         defer allocator.free(body);
-
-        const response = try self.openai.request(.POST, "/chat/completions", .{
-            .body = body,
+        const response = try self.openai.request(.{
+            .method = .POST,
+            .path = "/chat/completions",
+            .json = body,
         }, ChatCompletion);
         switch (response) {
             .err => |err| {

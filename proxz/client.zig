@@ -204,9 +204,24 @@ pub const OpenAI = struct {
         self.allocator.destroy(self);
     }
 
+    pub const OpenAIRequest = struct {
+        method: http.Method,
+        path: []const u8,
+        json: ?[]const u8 = null,
+    };
+
     /// Makes a request to the OpenAI base_url provided to the client, with the corresponding method, path, and options provided.
-    /// This is an ***internal*** function not meant to be used outside of `proxz`.
-    pub fn request(self: *const OpenAI, method: http.Method, path: []const u8, options: RequestOptions, comptime T: type) !OpenAIResponse(T) {
+    /// If there isn't a proxz method to hit an endpoint, this can be used and will automatically pass in required headers.
+    /// ```zig
+    /// const response = try self.openai.request(.{
+    ///     .method = .POST, // .GET, .PUT, .etc.
+    //      .path = "/my/endpoint",
+    ///     .json = body,
+    /// }, ResponseBodyStruct); // pass in null for no response body
+    /// ````
+    pub fn request(self: *const OpenAI, options: OpenAIRequest, comptime ResponseType: ?type) !if (ResponseType) |T| OpenAIResponse(T) else void {
+        const method = options.method;
+        const path = options.path;
         const allocator = self.allocator;
         const url_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ self.base_url, path });
         defer allocator.free(url_string);
@@ -231,11 +246,11 @@ pub const OpenAI = struct {
             });
             defer req.deinit();
 
-            if (options.body) |body| {
+            if (options.json) |body| {
                 req.transfer_encoding = .{ .content_length = body.len };
             }
             try req.send();
-            if (options.body) |body| {
+            if (options.json) |body| {
                 log.debug("{s}", .{body});
                 try req.writer().writeAll(body);
                 try req.finish();
@@ -245,19 +260,26 @@ pub const OpenAI = struct {
             const body = try req.reader().readAllAlloc(allocator, 1024 * 1024);
             defer allocator.free(body);
 
-            if (req.response.status != .ok) {
+            const status_int = @intFromEnum(req.response.status);
+            if (status_int < 200 or status_int >= 300) {
                 if (attempt != self.max_retries and @intFromEnum(req.response.status) >= 429) {
                     // retry on 429, 500, and 503
                     log.info("Retrying ({d}/{d}) after {d} seconds.", .{ attempt + 1, self.max_retries, backoff });
                     std.time.sleep(@as(u64, @intFromFloat(backoff * std.time.ns_per_s)));
                     backoff = if (backoff * 2 <= MAX_RETRY_DELAY) backoff * 2 else MAX_RETRY_DELAY;
                 } else {
-                    const err = try models.Response(APIErrorResponse).parse(allocator, body);
-                    return OpenAIResponse(T){ .err = err };
+                    if (ResponseType) |T| {
+                        const err = try models.Response(APIErrorResponse).parse(allocator, body);
+                        return OpenAIResponse(T){ .err = err };
+                    } else {
+                        return;
+                    }
                 }
             } else {
-                const response = try models.Response(T).parse(allocator, body);
-                return OpenAIResponse(T){ .ok = response };
+                if (ResponseType) |T| {
+                    const response = try models.Response(T).parse(allocator, body);
+                    return OpenAIResponse(T){ .ok = response };
+                }
             }
         }
         // max_retries must be >= 0 (since it's usize) and loop condition is 0..max_retries+1
