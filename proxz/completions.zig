@@ -8,7 +8,18 @@ pub const ChatMessage = struct {
     content: []const u8,
 };
 
-pub const ChatRequest = struct {
+pub const ChatModelType = enum { reasoning, regular };
+
+/// Map of model names to the type of model they are, used for validation.
+pub const CHAT_MODELS: std.StaticStringMap([]const u8) = std.StaticStringMap(ChatModelType).initComptime(.{
+    .{ "gpt-4o", .regular },
+    .{ "gpt-4o-mini", .regular },
+    .{ "o1", .reasoning },
+    .{ "o1-preview", .reasoning },
+    .{ "o3-mini", .reasoning },
+});
+
+pub const ChatCompletionsRequest = struct {
     /// Required: ID of the model to use
     model: []const u8,
 
@@ -21,7 +32,7 @@ pub const ChatRequest = struct {
 
     /// Optional: Constrains effort on reasoning for reasoning models (o1 and o3-mini models only)
     /// Supported values: "low", "medium", "high"
-    /// Defaults to "medium"
+    /// Defaults to "medium" if left null,
     /// TODO: implement logic for removing this parameter when it is not supported
     // reasoning_effort: ?[]const u8 = null,
 
@@ -31,8 +42,8 @@ pub const ChatRequest = struct {
 
     /// Optional: Number between -2.0 and 2.0
     /// Positive values penalize new tokens based on their existing frequency
-    /// Defaults to 0.0
-    frequency_penalty: f32 = 0.0,
+    /// Defaults to 0.0 if left null.
+    frequency_penalty: ?f32 = null,
 
     /// Optional: Modify likelihood of specified tokens appearing in completion
     /// TODO: implement logit_bias parameter as IntegerHashMap
@@ -40,7 +51,7 @@ pub const ChatRequest = struct {
 
     /// Optional: Whether to return log probabilities of output tokens
     /// Defaults to false
-    logprobs: ?bool = false,
+    logprobs: ?bool = null,
 
     /// Optional: Number of most likely tokens to return at each position (0-20)
     /// Requires logprobs to be true
@@ -54,8 +65,8 @@ pub const ChatRequest = struct {
     max_completion_tokens: ?i32 = null,
 
     /// Optional: Number of chat completion choices to generate
-    /// Defaults to 1
-    n: ?i32 = 1,
+    /// Defaults to 1 if left null.
+    n: ?i32 = null,
 
     /// Optional: Output types for model to generate (e.g. ["text"], ["text", "audio"])
     /// Defaults to ["text"]
@@ -71,8 +82,8 @@ pub const ChatRequest = struct {
 
     /// Optional: Number between -2.0 and 2.0
     /// Positive values penalize new tokens based on presence in text
-    /// Defaults to 0.0
-    presence_penalty: f32 = 0.0,
+    /// Defaults to 0.0 if left null
+    presence_penalty: ?f32 = null,
 
     /// Optional: Format specification for model output
     /// TODO: implement response_format parameter as union
@@ -91,18 +102,18 @@ pub const ChatRequest = struct {
     stop: ?[]const u8 = null,
 
     /// Optional: Enable streaming of partial message deltas
-    /// Defaults to false
-    /// TODO: implement stream parameter
-    // stream: ?bool = false,
+    /// Defaults to false if left null.
+    /// TODO: implement
+    stream: ?bool = null,
 
     /// Optional: Temperature for sampling (0.0-2.0)
-    /// Higher values increase randomness
-    /// Defaults to 1.0
-    temperature: f32 = 1.0,
+    /// Higher values increase randomness.
+    /// Defaults to 1.0 if left null
+    temperature: ?f32 = null,
 
     /// Optional: Alternative to temperature for nucleus sampling (0.0-1.0)
-    /// Defaults to 1.0
-    top_p: f32 = 1.0,
+    /// Defaults to 1.0 if left null
+    top_p: ?f32 = null,
 
     /// Optional: List of tools (functions) the model may call
     /// TODO: implement tools parameter as array of structs
@@ -119,6 +130,49 @@ pub const ChatRequest = struct {
 
     /// Optional: Unique identifier for end-user
     user: ?[]const u8 = null,
+
+    /// Returns the payload of a chat completions request in json format
+    pub fn getParams(self: *const ChatCompletionsRequest, allocator: std.mem.Allocator) !void {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        const alloc = arena.allocator();
+        defer arena.deinit();
+        var object = std.json.ObjectMap.init(alloc);
+        defer object.deinit();
+        inline for (std.meta.fields(ChatCompletionsRequest)) |field| {
+            const val = @field(self, field.name);
+            const info = @typeInfo(@TypeOf(val));
+            switch (info) {
+                // can't compare null if not .Optional
+                .Optional => {
+                    if (val != null) {
+                        // TODO: fix this grossness
+                        const s = try std.json.stringifyAlloc(
+                            alloc,
+                            val,
+                            .{},
+                        );
+                        const parsed = try std.json.parseFromSlice(std.json.Value, alloc, s, .{});
+                        try object.put(field.name, parsed.value);
+                    }
+                },
+                else => {
+                    // TODO: fix this grossness
+                    const s = try std.json.stringifyAlloc(
+                        alloc,
+                        val,
+                        .{},
+                    );
+                    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, s, .{});
+                    try object.put(field.name, parsed.value);
+                },
+            }
+            // std.debug.print("{s} - {s}: {any}\n\n", .{ @typeName(field.type), field.name, @field(self, field.name) });
+        }
+        const json_value = std.json.Value{ .object = object };
+        const str = try std.json.stringifyAlloc(allocator, json_value, .{});
+        defer allocator.free(str);
+        std.debug.print("{s}", .{str});
+    }
 };
 
 pub const CompletionTokensDetails = struct {
@@ -196,7 +250,7 @@ pub const Completions = struct {
     /// const chat_completion: ChatCompletion = response.data;
     /// std.debug.print("{s}", .{chat_completion.choices[0].message.content});
     /// ```
-    pub fn create(self: *Completions, request: ChatRequest) !models.Response(ChatCompletion) {
+    pub fn create(self: *Completions, request: ChatCompletionsRequest) !models.Response(ChatCompletion) {
         const allocator = self.openai.arena.allocator();
         const body = try std.json.stringifyAlloc(allocator, request, .{});
         defer allocator.free(body);

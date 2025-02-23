@@ -10,10 +10,10 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // make sure you have an OPENAI_API_KEY environment variable set!
-    var openai = try OpenAI.init(allocator, .{});
+    var openai = try OpenAI.init(allocator, .{ .api_key = "test" });
     defer openai.deinit();
 
-    var response = try openai.chat.completions.create(.{
+    const request: proxz.completions.ChatCompletionsRequest = .{
         .model = "gpt-4o",
         .messages = &[_]ChatMessage{
             .{
@@ -21,9 +21,13 @@ pub fn main() !void {
                 .content = "Hello, world!",
             },
         },
-    });
-    // This will free all the memory allocated for the response
-    defer response.deinit();
-    const completion = response.data;
-    std.log.debug("{s}", .{completion.choices[0].message.content});
+    };
+
+    try request.getParams(allocator);
+
+    // var response = try openai.chat.completions.create(.{});
+    // // This will free all the memory allocated for the response
+    // defer response.deinit();
+    // const completion = response.data;
+    // std.log.debug("{s}", .{completion.choices[0].message.content});
 }

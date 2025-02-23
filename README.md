@@ -1,8 +1,18 @@
 ![Static Badge](https://img.shields.io/badge/zig-0.13.0-%23F7A41D?logo=zig&logoColor=%23F7A41D)
+![Static Badge](https://img.shields.io/badge/License-MIT-blue)
 
 # ProxZ
 
-An OpenAI API library for the Zig programming language!
+A well documented OpenAI API library for the Zig programming language!
+
+An easy to use interface familiar to those that have used the `openai-python` package.
+
+## Features
+
+- An easy to use interface familiar to those that have used the `openai-python` package.
+- Built-in retry logic
+- Environment variable support for API keys, Org. IDs, and Project IDs
+- Integration with the most popular OpenAI endpoints
 
 ## Installation
 
