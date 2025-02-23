@@ -1,5 +1,4 @@
 const std = @import("std");
-const models = @import("models.zig");
 const client = @import("client.zig");
 const log = std.log;
 
@@ -33,11 +32,10 @@ pub const ChatCompletionsRequest = struct {
     /// Optional: Constrains effort on reasoning for reasoning models (o1 and o3-mini models only)
     /// Supported values: "low", "medium", "high"
     /// Defaults to "medium" if left null,
-    /// TODO: implement logic for removing this parameter when it is not supported
-    // reasoning_effort: ?[]const u8 = null,
+    reasoning_effort: ?[]const u8 = null,
 
-    /// Optional: Set of key-value pairs for storing additional information
-    /// TODO: implement metadata parameter as StringHashMap
+    // Optional: Set of key-value pairs for storing additional information
+    // TODO: implement metadata parameter as StringHashMap
     // metadata: StringHashMap([]const u8),
 
     /// Optional: Number between -2.0 and 2.0
@@ -45,8 +43,8 @@ pub const ChatCompletionsRequest = struct {
     /// Defaults to 0.0 if left null.
     frequency_penalty: ?f32 = null,
 
-    /// Optional: Modify likelihood of specified tokens appearing in completion
-    /// TODO: implement logit_bias parameter as IntegerHashMap
+    // Optional: Modify likelihood of specified tokens appearing in completion
+    // TODO: implement logit_bias parameter as IntegerHashMap
     // logit_bias: IntegerHashMap(f32),
 
     /// Optional: Whether to return log probabilities of output tokens
@@ -72,12 +70,12 @@ pub const ChatCompletionsRequest = struct {
     /// Defaults to ["text"]
     modalities: ?[][]const u8 = null,
 
-    /// Optional: Configuration for Predicted Output
-    /// TODO: implement prediction parameter as struct
+    // Optional: Configuration for Predicted Output
+    // TODO: implement prediction parameter as struct
     // prediction: PredictionConfig,
 
-    /// Optional: Parameters for audio output
-    /// TODO: implement audio parameter as struct
+    // Optional: Parameters for audio output
+    // TODO: implement audio parameter as struct
     // audio: AudioConfig,
 
     /// Optional: Number between -2.0 and 2.0
@@ -85,8 +83,8 @@ pub const ChatCompletionsRequest = struct {
     /// Defaults to 0.0 if left null
     presence_penalty: ?f32 = null,
 
-    /// Optional: Format specification for model output
-    /// TODO: implement response_format parameter as union
+    // Optional: Format specification for model output
+    // TODO: implement response_format parameter as union
     // response_format: ResponseFormat,
 
     /// Optional: Seed for deterministic sampling
@@ -101,11 +99,6 @@ pub const ChatCompletionsRequest = struct {
     /// Can be string or array of strings
     stop: ?[]const u8 = null,
 
-    /// Optional: Enable streaming of partial message deltas
-    /// Defaults to false if left null.
-    /// TODO: implement
-    stream: ?bool = null,
-
     /// Optional: Temperature for sampling (0.0-2.0)
     /// Higher values increase randomness.
     /// Defaults to 1.0 if left null
@@ -115,17 +108,17 @@ pub const ChatCompletionsRequest = struct {
     /// Defaults to 1.0 if left null
     top_p: ?f32 = null,
 
-    /// Optional: List of tools (functions) the model may call
-    /// TODO: implement tools parameter as array of structs
+    // Optional: List of tools (functions) the model may call
+    // TODO: implement tools parameter as array of structs
     // tools: []Tool,
 
-    /// Optional: Controls which tool is called by the model
-    /// TODO: implement tool_choice parameter as union
+    // Optional: Controls which tool is called by the model
+    // TODO: implement tool_choice parameter as union
     // tool_choice: ToolChoice,
 
-    /// Optional: Enable parallel function calling during tool use
-    /// Defaults to true
-    /// TODO: implement parallel_tool_calls
+    // Optional: Enable parallel function calling during tool use
+    // Defaults to true
+    // TODO: implement parallel_tool_calls
     // parallel_tool_calls: bool = true,
 
     /// Optional: Unique identifier for end-user
@@ -234,7 +227,7 @@ pub const Completions = struct {
     /// const chat_completion: ChatCompletion = response.data;
     /// std.debug.print("{s}", .{chat_completion.choices[0].message.content});
     /// ```
-    pub fn create(self: *Completions, request: ChatCompletionsRequest) !models.Response(ChatCompletion) {
+    pub fn create(self: *Completions, request: ChatCompletionsRequest) !client.Response(ChatCompletion) {
         const allocator = self.openai.arena.allocator();
         const body = try std.json.stringifyAlloc(allocator, request, .{});
         defer allocator.free(body);

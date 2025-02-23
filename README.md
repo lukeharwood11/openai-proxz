@@ -3,18 +3,19 @@
 
 # ProxZ
 
-A well documented OpenAI API library for the Zig programming language!
-
-An easy to use interface familiar to those that have used the `openai-python` package.
+An OpenAI API library for the Zig programming language!
 
 ## Features
 
-- An easy to use interface familiar to those that have used the `openai-python` package.
+- An easy to use interface, similar to the `openai-python` package.
 - Built-in retry logic
-- Environment variable support for API keys, Org. IDs, and Project IDs
-- Integration with the most popular OpenAI endpoints
+- Environment variable config support for API keys, Org. IDs, Project IDs, and base urls
+- Integration with the most popular OpenAI endpoints with a generic `request` method for missing endpoints
 
 ## Installation
+
+!!! note
+    "This is only compatible with zig version 0.13.0 at this time."
 
 To install `proxz`, run
 
@@ -43,7 +44,8 @@ const OpenAI = proxz.OpenAI;
 ```
 
 ```zig
-// make sure you have an OPENAI_API_KEY environment variable set!
+// make sure you have an OPENAI_API_KEY environment variable set,
+// or pass in a .api_key field to explicitly set!
 var openai = try OpenAI.init(allocator, .{});
 defer openai.deinit();
 ```

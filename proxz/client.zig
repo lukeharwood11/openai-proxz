@@ -12,12 +12,56 @@
 const std = @import("std");
 const http = std.http;
 const log = std.log;
-const models = @import("models.zig");
 const chat = @import("chat.zig");
 const embeddings = @import("embeddings.zig");
+const models = @import("models.zig");
 
 const INITIAL_RETRY_DELAY = 0.5;
 const MAX_RETRY_DELAY = 8;
+
+/// An OpenAI API response wrapper, returns a struct with the following fields:
+/// ```
+/// data: T,
+/// parsed: ?std.json.Parsed(T) = null,
+/// allocator: std.mem.Allocator,
+/// ```
+/// The caller is responsible of calling `deinit` on this object to clean up resources
+pub fn Response(comptime T: type) type {
+    return struct {
+        /// The response payload
+        data: T,
+        /// The backing json Parsed object, that contains all memory created for this object
+        parsed: ?std.json.Parsed(T) = null,
+        allocator: std.mem.Allocator,
+
+        const Self = @This();
+
+        /// Parses the response from the API into a struct of type T, which is accessible via the .data field
+        /// The caller is also responsible for calling deinit() on the response to free all allocated memory
+        pub fn parse(allocator: std.mem.Allocator, source: []const u8) !Self {
+            const parsed = try std.json.parseFromSlice(T, allocator, source, .{ .ignore_unknown_fields = true, .allocate = .alloc_always });
+            return Self{
+                .data = parsed.value,
+                .parsed = parsed,
+                .allocator = allocator,
+            };
+        }
+
+        /// Deinitializes all memory allocated for the response
+        pub fn deinit(self: *const Self) void {
+            if (self.parsed) |parsed| {
+                parsed.deinit();
+            }
+        }
+    };
+}
+
+pub const APIError = struct {
+    message: []const u8,
+    type: []const u8,
+    param: ?[]const u8 = null,
+    code: ?[]const u8 = null,
+};
 
 /// Options to be passed through to the `OpenAI.init` function.
 pub const OpenAIConfig = struct {
@@ -37,20 +81,13 @@ pub const APIErrorResponse = struct {
     @"error": APIError,
 };
 
-pub const APIError = struct {
-    message: []const u8,
-    type: []const u8,
-    param: ?[]const u8 = null,
-    code: ?[]const u8 = null,
-};
-
 /// A wrapper for all OpenAI responses, whether successful or otherwise.
 /// This allows the caller to determine whether the call was successful or not.
 /// This is an internal API level struct.
 fn OpenAIResponse(comptime T: type) type {
     return union(enum) {
-        ok: models.Response(T),
-        err: models.Response(APIErrorResponse),
+        ok: Response(T),
+        err: Response(APIErrorResponse),
 
         pub fn deinit(self: *@This()) void {
             switch (self.*) {
@@ -91,6 +128,7 @@ pub const OpenAI = struct {
     allocator: std.mem.Allocator,
     client: http.Client,
     chat: chat.Chat,
+    models: models.Models,
     embeddings: embeddings.Embeddings,
     api_key: []const u8,
     base_url: []const u8,
@@ -131,6 +169,7 @@ pub const OpenAI = struct {
             .client = http.Client{ .allocator = arena.allocator() },
             .chat = undefined, // have to pass in self
             .embeddings = undefined, // have to pass in self
+            .models = undefined, // have to pass in self
             .api_key = undefined,
             .base_url = undefined,
             .organization = null,
@@ -167,6 +206,7 @@ pub const OpenAI = struct {
         // init sub components
         self.chat = chat.Chat.init(self);
         self.embeddings = embeddings.Embeddings.init(self);
+        self.models = models.Models.init(self);
 
         // client headers
         const auth_header = std.fmt.allocPrint(self.arena.allocator(), "Bearer {s}", .{self.api_key}) catch {
@@ -251,7 +291,6 @@ pub const OpenAI = struct {
             }
             try req.send();
             if (options.json) |body| {
-                log.debug("{s}", .{body});
                 try req.writer().writeAll(body);
                 try req.finish();
             }
@@ -264,21 +303,24 @@ pub const OpenAI = struct {
             if (status_int < 200 or status_int >= 300) {
                 if (attempt != self.max_retries and @intFromEnum(req.response.status) >= 429) {
                     // retry on 429, 500, and 503
-                    log.info("Retrying ({d}/{d}) after {d} seconds.", .{ attempt + 1, self.max_retries, backoff });
+                    log.info("({d} {s}) - Retrying ({d}/{d}) after {d} seconds.", .{ status_int, @tagName(req.response.status), attempt + 1, self.max_retries, backoff });
                     std.time.sleep(@as(u64, @intFromFloat(backoff * std.time.ns_per_s)));
                     backoff = if (backoff * 2 <= MAX_RETRY_DELAY) backoff * 2 else MAX_RETRY_DELAY;
                 } else {
                     if (ResponseType) |T| {
-                        const err = try models.Response(APIErrorResponse).parse(allocator, body);
+                        const err = try Response(APIErrorResponse).parse(allocator, body);
                         return OpenAIResponse(T){ .err = err };
                     } else {
                         return;
                     }
                 }
             } else {
+                log.info("{s} - {s} - {d} {s}", .{ @tagName(method), url_string, status_int, req.response.status.phrase() orelse "Unknown" });
                 if (ResponseType) |T| {
-                    const response = try models.Response(T).parse(allocator, body);
+                    const response = try Response(T).parse(allocator, body);
                     return OpenAIResponse(T){ .ok = response };
+                } else {
+                    return;
                 }
             }
         }

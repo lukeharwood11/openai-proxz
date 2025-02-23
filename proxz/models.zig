@@ -1,50 +1,55 @@
 const std = @import("std");
-const json = std.json;
+const openai = @import("client.zig");
+const OpenAI = openai.OpenAI;
+const log = std.log;
 
-/// An OpenAI API response wrapper, returns a struct with the following fields:
-/// ```
-/// data: T,
-/// parsed: ?json.Parsed(T) = null,
-/// allocator: std.mem.Allocator,
-/// ```
-/// The caller is responsible of calling `deinit` on this object to clean up resources
-pub fn Response(comptime T: type) type {
-    return struct {
-        /// The response payload
-        data: T,
-        /// The backing json Parsed object, that contains all memory created for this object
-        parsed: ?json.Parsed(T) = null,
-        allocator: std.mem.Allocator,
+pub const ListModelResponse = struct { object: []const u8, data: []const Object };
+pub const Object = struct { id: []const u8, object: []const u8, created: u64, owned_by: []const u8 };
 
-        const Self = @This();
+pub const Models = struct {
+    client: *const OpenAI,
 
-        /// Parses the response from the API into a struct of type T, which is accessible via the .data field
-        /// The caller is also responsible for calling deinit() on the response to free all allocated memory
-        pub fn parse(allocator: std.mem.Allocator, source: []const u8) !Self {
-            const parsed = try json.parseFromSlice(T, allocator, source, .{ .ignore_unknown_fields = true, .allocate = .alloc_always });
-            return Self{
-                .data = parsed.value,
-                .parsed = parsed,
-                .allocator = allocator,
-            };
+    pub fn init(client: *const OpenAI) Models {
+        return Models{
+            .client = client,
+        };
+    }
+
+    pub fn deinit(self: *Models) void {
+        _ = self;
+    }
+
+    pub fn list(self: *const Models) !openai.Response(ListModelResponse) {
+        const response = try self.client.request(.{ .method = .GET, .path = "/models" }, ListModelResponse);
+        switch (response) {
+            .err => |err| {
+                log.err("{s} ({s}): {s}", .{ err.data.@"error".type, err.data.@"error".code orelse "None", err.data.@"error".message });
+                // TODO: figure out how we want to handle errors
+                // for now just return a generic error
+                defer err.deinit();
+                return openai.OpenAIError.BadRequest;
+            },
+            .ok => |ok| {
+                return ok;
+            },
         }
+    }
 
-        /// Deinitializes all memory allocated for the response
-        pub fn deinit(self: *const Self) void {
-            if (self.parsed) |parsed| {
-                parsed.deinit();
-            }
+    pub fn retrieve(self: *const Models, id: []const u8) !openai.Response(Object) {
+        const path = try std.fmt.allocPrint(self.client.allocator, "/models/{s}", .{id});
+        defer self.client.allocator.free(path);
+        const response = try self.client.request(.{ .method = .GET, .path = path }, Object);
+        switch (response) {
+            .err => |err| {
+                log.err("{s} ({s}): {s}", .{ err.data.@"error".type, err.data.@"error".code orelse "None", err.data.@"error".message });
+                // TODO: figure out how we want to handle errors
+                // for now just return a generic error
+                defer err.deinit();
+                return openai.OpenAIError.BadRequest;
+            },
+            .ok => |ok| {
+                return ok;
+            },
         }
-    };
-}
-
-pub const APIError = struct {
-    message: []const u8,
-    type: []const u8,
-    param: ?[]const u8 = null,
-    code: ?[]const u8 = null,
-};
-
-pub const APIErrorResponse = struct {
-    @"error": APIError,
+    }
 };
