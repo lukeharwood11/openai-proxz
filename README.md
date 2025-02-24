@@ -25,7 +25,7 @@ An OpenAI API library for the Zig programming language!
 To install `proxz`, run
 
 ```bash
- zig fetch --save "git+https://github.com/lukeharwood11/openai-proxz#3fd51f2247929c4d161e5a1ed53f2b8aef104261"
+ zig fetch --save "git+https://github.com/lukeharwood11/openai-proxz"
 ```
 
 And add the following to your `build.zig`
