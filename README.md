@@ -1,13 +1,13 @@
 ![Static Badge](https://img.shields.io/badge/zig-0.13.0-%23F7A41D?logo=zig&logoColor=%23F7A41D)
 ![Static Badge](https://img.shields.io/badge/License-MIT-blue)
 
-# ProxZ
+# ProxZ 🦎
 
 An OpenAI API library for the Zig programming language!
 
-|Documentation||
+|✨ Documentation ✨||
 |--|--|
-|📕 ProxZ Docs |<http://proxz.mle.academy> |
+|📙 ProxZ Docs |<http://proxz.mle.academy> |
 |📗 OpenAI API Docs|<https://platform.openai.com/docs/api-reference>|
 
 ## Features
