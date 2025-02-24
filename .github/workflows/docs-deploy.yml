@@ -22,4 +22,4 @@ jobs:
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: us-east-2
       - name: Deploy Docs
-        run: bash ./scripts/deploy.sh
+        run: bash ./scripts/deploy-docs.sh
