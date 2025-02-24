@@ -1,4 +1,4 @@
-name: Build Application
+name: Build Library
 
 on:
   # merge requests to main will trigger a build or manual dispatch

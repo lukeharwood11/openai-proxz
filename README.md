@@ -7,7 +7,7 @@ An OpenAI API library for the Zig programming language!
 
 |✨ Documentation ✨||
 |--|--|
-|📙 ProxZ Docs |<http://proxz.mle.academy> |
+|📙 ProxZ Docs |<https://proxz.mle.academy> |
 |📗 OpenAI API Docs|<https://platform.openai.com/docs/api-reference>|
 
 ## Features
