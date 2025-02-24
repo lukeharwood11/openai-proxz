@@ -5,10 +5,10 @@
 
 An OpenAI API library for the Zig programming language!
 
-|||
+|Documentation||
 |--|--|
-|OpenAI API Docs|<https://platform.openai.com/docs/api-reference>|
-|ProxZ Documentation |<http://proxz.mle.academy> |
+|📕 ProxZ Docs |<http://proxz.mle.academy> |
+|📗 OpenAI API Docs|<https://platform.openai.com/docs/api-reference>|
 
 ## Features
 
