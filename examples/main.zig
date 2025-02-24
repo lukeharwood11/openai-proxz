@@ -41,8 +41,9 @@ pub fn main() !void {
     });
     defer embeddings_response.deinit();
     const embeddings = embeddings_response.data;
-    std.log.debug("Model: {s}\nNumber of Embeddings: {d}\n", .{
+    std.log.debug("Model: {s}\nNumber of Embeddings: {d}\nDimensions of Embeddings: {d}", .{
         embeddings.model,
         embeddings.data.len,
+        embeddings.data[0].embedding.len,
     });
 }

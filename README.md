@@ -7,9 +7,9 @@ An OpenAI API library for the Zig programming language!
 
 ## Features
 
-- An easy to use interface, similar to the `openai-python` package.
+- An easy to use interface, similar to that of `openai-python`
 - Built-in retry logic
-- Environment variable config support for API keys, Org. IDs, Project IDs, and base urls
+- Environment variable config support for API keys, org. IDs, project IDs, and base urls
 - Integration with the most popular OpenAI endpoints with a generic `request` method for missing endpoints
 
 ## Installation
@@ -68,6 +68,24 @@ var response = try openai.chat.completions.create(.{
 defer response.deinit();
 const completions = response.data;
 std.log.debug("{s}", .{completions.choices[0].message.content});
+```
+
+### Embeddings
+
+```zig
+const inputs = [_][]const u8{ "Hello", "Foo", "Bar" };
+const embeddings_response = try openai.embeddings.create(.{
+    .model = "text-embedding-3-small",
+    .input = &inputs,
+});
+// Don't forget to free resources!
+defer embeddings_response.deinit();
+const embeddings = embeddings_response.data;
+std.log.debug("Model: {s}\nNumber of Embeddings: {d}\nDimensions of Embeddings: {d}", .{
+    embeddings.model,
+    embeddings.data.len,
+    embeddings.data[0].embedding.len,
+});
 ```
 
 ## Contributions

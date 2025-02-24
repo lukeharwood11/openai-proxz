@@ -1,0 +1,25 @@
+name: Deploy Application
+
+on:
+  workflow_dispatch:
+  
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
+        with:
+          audience: sts.amazonaws.com
+          role-to-assume: arn:aws:iam::891612573605:role/github-oidc
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: us-east-2
+      - name: Deploy Docs
+        run: bash ./scripts/deploy.sh

@@ -25,7 +25,8 @@ const MAX_RETRY_DELAY = 8;
 /// parsed: ?std.json.Parsed(T) = null,
 /// allocator: std.mem.Allocator,
 /// ```
-/// The caller is responsible of calling `deinit` on this object to clean up resources
+/// The caller is responsible of calling `deinit` on this object to clean up resources.
+/// In the future this will be removed in favor of the response objects owning their own memory.
 pub fn Response(comptime T: type) type {
     return struct {
         /// The response payload
