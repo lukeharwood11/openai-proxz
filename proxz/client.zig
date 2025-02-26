@@ -11,7 +11,7 @@
 //!
 const std = @import("std");
 const http = std.http;
-const log = std.log;
+const log = std.log.scoped(.proxz);
 const chat = @import("chat.zig");
 const embeddings = @import("embeddings.zig");
 const models = @import("models.zig");
@@ -293,8 +293,6 @@ pub const OpenAI = struct {
         const url_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ self.base_url, path });
         defer allocator.free(url_string);
 
-        // log.debug("{s} - {s}", .{ @tagName(method), url_string });
-
         const uri = try std.Uri.parse(url_string);
 
         const server_header_buffer = try allocator.alloc(u8, 8 * 1024 * 4);
@@ -318,6 +316,7 @@ pub const OpenAI = struct {
             }
             try req.send();
             if (options.json) |body| {
+                log.debug("{s}", .{body});
                 try req.writer().writeAll(body);
                 try req.finish();
             }

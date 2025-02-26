@@ -4,6 +4,16 @@ const proxz = @import("proxz");
 const ChatMessage = proxz.ChatMessage;
 const OpenAI = proxz.OpenAI;
 
+pub const std_options = std.Options{
+    .log_level = .debug, // this sets your app level log config
+    .log_scope_levels = &[_]std.log.ScopeLevel{
+        .{
+            .scope = .proxz,
+            .level = .info, // set to .debug, .warn, .info, or .err
+        },
+    },
+};
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -32,7 +42,7 @@ pub fn main() !void {
     // This will free all the memory allocated for the response
     defer chat_response.deinit();
     const completion = chat_response.data;
-    std.log.debug("{s}\n", .{completion.choices[0].message.content});
+    std.log.debug("{s}", .{completion.choices[0].message.content});
 
     const inputs = [_][]const u8{ "Hello", "Foo", "Bar" };
     const embeddings_response = try openai.embeddings.create(.{

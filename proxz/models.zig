@@ -1,7 +1,6 @@
 const std = @import("std");
 const openai = @import("client.zig");
 const OpenAI = openai.OpenAI;
-const log = std.log;
 
 pub const ListModelResponse = struct { object: []const u8, data: []const Object };
 pub const Object = struct { id: []const u8, object: []const u8, created: u64, owned_by: []const u8 };
