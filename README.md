@@ -95,7 +95,8 @@ std.log.debug("Model: {s}\nNumber of Embeddings: {d}\nDimensions of Embeddings: 
 
 ## Configuring Logging
 
-By default all logs are enabled for your entire application. To configure your application, and set the log level for `proxz`, include the following in your `main.zig`.
+By default all logs are enabled for your entire application.
+To configure your application, and set the log level for `proxz`, include the following in your `main.zig`.
 
 ```zig
 pub const std_options = std.Options{
