@@ -290,7 +290,6 @@ pub const OpenAI = struct {
         const method = options.method;
         const path = options.path;
         const allocator = self.allocator;
-        log.err("Something went wrong.", .{});
         const url_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ self.base_url, path });
         defer allocator.free(url_string);
 
