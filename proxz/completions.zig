@@ -1,6 +1,5 @@
 const std = @import("std");
 const client = @import("client.zig");
-const log = std.log;
 
 pub const ChatMessage = struct {
     role: []const u8,

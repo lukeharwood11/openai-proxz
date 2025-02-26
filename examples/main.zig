@@ -4,6 +4,16 @@ const proxz = @import("proxz");
 const ChatMessage = proxz.ChatMessage;
 const OpenAI = proxz.OpenAI;
 
+pub const std_options = std.Options{
+    .log_level = .debug, // this sets your app level log config
+    .log_scope_levels = &[_]std.log.ScopeLevel{
+        .{
+            .scope = .proxz,
+            .level = .info, // set to .debug, .warn, .info, or .err
+        },
+    },
+};
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();

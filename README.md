@@ -93,6 +93,24 @@ std.log.debug("Model: {s}\nNumber of Embeddings: {d}\nDimensions of Embeddings: 
 });
 ```
 
+## Configuring Logging
+
+By default all logs are enabled for your entire application. To configure your application, and set the log level for `proxz`, include the following in your `main.zig`.
+
+```zig
+pub const std_options = std.Options{
+    .log_level = .debug, // this sets your app level log config
+    .log_scope_levels = &[_]std.log.ScopeLevel{
+        .{
+            .scope = .proxz,
+            .level = .info, // set to .debug, .warn, .info, or .err
+        },
+    },
+};
+```
+
+All logs in `proxz` use the scope `.proxz`, so if you don't want to see debug/info logs of the requests being sent, set `.level = .err`. This will only display when an error occurs that `proxz` can't recover from.
+
 ## Contributions
 
 Contributions are welcome and encouraged! Submit an issue for any bugs/feature requests and open a PR if you tackled one of them!
