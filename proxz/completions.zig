@@ -182,9 +182,7 @@ pub const Choice = struct {
     finish_reason: []const u8,
 };
 
-// A chat/completion payload.
-//
-// TODO: experiment with `jsonParse` to allocate memory with the arena allocator.
+/// A chat completions payload.
 pub const ChatCompletion = struct {
     id: []const u8,
     object: []const u8,
@@ -192,7 +190,14 @@ pub const ChatCompletion = struct {
     model: []const u8,
     choices: []Choice,
     usage: Usage,
+    service_tier: []const u8,
     system_fingerprint: ?[]const u8 = null,
+    arena: *std.heap.ArenaAllocator,
+
+    pub fn deinit(self: *const ChatCompletion) void {
+        self.arena.deinit();
+        self.arena.child_allocator.destroy(self.arena);
+    }
 };
 
 /// A struct that contains methods for creating chat completions
@@ -209,7 +214,7 @@ pub const Completions = struct {
 
     pub fn deinit(_: *Completions) void {}
 
-    /// Creates a chat completion request and returns a Response(ChatCompletion)
+    /// Creates a chat completion request and returns a ChatCompletion
     /// The caller is also responsible for calling deinit() on the response to free all allocated memory.
     /// ### Example:
     /// ```zig
@@ -223,14 +228,13 @@ pub const Completions = struct {
     ///     },
     /// });
     /// defer response.deinit();
-    /// const chat_completion: ChatCompletion = response.data;
-    /// std.debug.print("{s}", .{chat_completion.choices[0].message.content});
+    /// std.debug.print("{s}", .{response.choices[0].message.content});
     /// ```
-    pub fn create(self: *Completions, request: ChatCompletionsRequest) !client.Response(ChatCompletion) {
-        const allocator = self.openai.arena.allocator();
+    pub fn create(self: *Completions, request: ChatCompletionsRequest) !ChatCompletion {
+        const allocator = self.openai.allocator;
         const body = try std.json.stringifyAlloc(allocator, request, .{});
         defer allocator.free(body);
-        const response = try self.openai.request(.{
+        const response: ChatCompletion = try self.openai.request(.{
             .method = .POST,
             .path = "/chat/completions",
             .json = body,

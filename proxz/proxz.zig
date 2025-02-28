@@ -19,11 +19,18 @@
 //!```
 //!
 //!Reference `OpenAI` to create a new client and `OpenAIConfig` to view what configuration options can be used.
+const std = @import("std");
 pub const client = @import("client.zig");
 pub const models = @import("models.zig");
 pub const completions = @import("completions.zig");
 pub const embeddings = @import("embeddings.zig");
+/// Contains helper functions for creating your own deserializable types.
+pub const json = @import("json.zig");
 
 pub const OpenAI = client.OpenAI;
 pub const OpenAIConfig = client.OpenAIConfig;
 pub const ChatMessage = completions.ChatMessage;
+
+test {
+    std.testing.refAllDecls(@This());
+}

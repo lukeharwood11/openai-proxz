@@ -22,10 +22,19 @@ An OpenAI API library for the Zig programming language!
 > [!NOTE]  
 > This is only compatible with zig version 0.13.0 at this time.
 
-To install `proxz`, run
+To install the latest version of `proxz`, run
 
 ```bash
  zig fetch --save "git+https://github.com/lukeharwood11/openai-proxz"
+```
+
+To install a specific version, run
+
+```bash
+zig fetch --save "https://github.com/lukeharwood11/openai-proxz/archive/refs/tags/<version>.tar.gz"
+
+# latest version
+# zig fetch --save "https://github.com/lukeharwood11/openai-proxz/archive/refs/tags/v0.0.2.tar.gz"
 ```
 
 And add the following to your `build.zig`
@@ -71,26 +80,43 @@ var response = try openai.chat.completions.create(.{
 });
 // This will free all the memory allocated for the response
 defer response.deinit();
-const completions = response.data;
-std.log.debug("{s}", .{completions.choices[0].message.content});
+std.log.debug("{s}", .{response.choices[0].message.content});
 ```
 
 ### Embeddings
 
 ```zig
 const inputs = [_][]const u8{ "Hello", "Foo", "Bar" };
-const embeddings_response = try openai.embeddings.create(.{
+const response = try openai.embeddings.create(.{
     .model = "text-embedding-3-small",
     .input = &inputs,
 });
 // Don't forget to free resources!
-defer embeddings_response.deinit();
-const embeddings = embeddings_response.data;
+defer response.deinit();
 std.log.debug("Model: {s}\nNumber of Embeddings: {d}\nDimensions of Embeddings: {d}", .{
-    embeddings.model,
-    embeddings.data.len,
-    embeddings.data[0].embedding.len,
+    response.model,
+    response.data.len,
+    response.data[0].embedding.len,
 });
+```
+
+### Models
+
+#### Get model details
+
+```zig
+var response = try openai.models.retrieve("gpt-4o");
+defer response.deinit();
+std.log.debug("Model is owned by '{s}'", .{response.owned_by});
+```
+
+#### List all models
+
+```zig
+var response = try openai.models.list();
+defer response.deinit();
+
+std.log.debug("The first model you have available is '{s}'", .{response.data[0].id})
 ```
 
 ## Configuring Logging

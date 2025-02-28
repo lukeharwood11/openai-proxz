@@ -15,47 +15,10 @@ const log = std.log.scoped(.proxz);
 const chat = @import("chat.zig");
 const embeddings = @import("embeddings.zig");
 const models = @import("models.zig");
+const json = @import("json.zig");
 
 const INITIAL_RETRY_DELAY = 0.5;
 const MAX_RETRY_DELAY = 8;
-
-/// An OpenAI API response wrapper, returns a struct with the following fields:
-/// ```
-/// data: T,
-/// parsed: ?std.json.Parsed(T) = null,
-/// allocator: std.mem.Allocator,
-/// ```
-/// The caller is responsible of calling `deinit` on this object to clean up resources.
-/// In the future this will be removed in favor of the response objects owning their own memory.
-pub fn Response(comptime T: type) type {
-    return struct {
-        /// The response payload
-        data: T,
-        /// The backing json Parsed object, that contains all memory created for this object
-        parsed: ?std.json.Parsed(T) = null,
-        allocator: std.mem.Allocator,
-
-        const Self = @This();
-
-        /// Parses the response from the API into a struct of type T, which is accessible via the .data field
-        /// The caller is also responsible for calling deinit() on the response to free all allocated memory
-        pub fn parse(allocator: std.mem.Allocator, source: []const u8) !Self {
-            const parsed = try std.json.parseFromSlice(T, allocator, source, .{ .ignore_unknown_fields = true, .allocate = .alloc_always });
-            return Self{
-                .data = parsed.value,
-                .parsed = parsed,
-                .allocator = allocator,
-            };
-        }
-
-        /// Deinitializes all memory allocated for the response
-        pub fn deinit(self: *const Self) void {
-            if (self.parsed) |parsed| {
-                parsed.deinit();
-            }
-        }
-    };
-}
 
 pub const APIError = struct {
     message: []const u8,
@@ -82,6 +45,12 @@ pub const OpenAIConfig = struct {
 /// Currently not exposed.
 const APIErrorResponse = struct {
     @"error": APIError,
+    arena: *std.heap.ArenaAllocator,
+
+    pub fn deinit(self: *const APIErrorResponse) void {
+        self.arena.deinit();
+        self.arena.child_allocator.destroy(self.arena);
+    }
 };
 
 /// Errors pertaining to OpenAI struct creation
@@ -285,8 +254,12 @@ pub const OpenAI = struct {
     //      .path = "/my/endpoint",
     ///     .json = body,
     /// }, ResponseBodyStruct); // pass in null for no response body
-    /// ````
-    pub fn request(self: *const OpenAI, options: OpenAIRequest, comptime ResponseType: ?type) !if (ResponseType) |T| Response(T) else void {
+    ///
+    /// ```
+    /// Note that the `ResponseType` _must_ have a field called `arena` of type `*std.heap.ArenaAllocator` (or you will get a @compileError).
+    /// This will be used to store the allocator that allocates all memory for the resulting struct.
+    /// The user is responsible for managing that memory.
+    pub fn request(self: *const OpenAI, options: OpenAIRequest, comptime ResponseType: ?type) !if (ResponseType) |T| T else void {
         const method = options.method;
         const path = options.path;
         const allocator = self.allocator;
@@ -334,18 +307,18 @@ pub const OpenAI = struct {
                     std.time.sleep(@as(u64, @intFromFloat(backoff * std.time.ns_per_s)));
                     backoff = if (backoff * 2 <= MAX_RETRY_DELAY) backoff * 2 else MAX_RETRY_DELAY;
                 } else {
-                    const err = Response(APIErrorResponse).parse(allocator, body) catch {
+                    const err = json.deserializeStructWithArena(APIErrorResponse, allocator, body) catch {
                         log.err("{s}", .{body});
                         // if we can't parse the error, it was a bad request.
                         return OpenAIError.BadRequest;
                     };
                     defer err.deinit();
-                    log.err("{s} ({s}): {s}", .{ err.data.@"error".type, err.data.@"error".code orelse "None", err.data.@"error".message });
+                    log.err("{s} ({s}): {s}", .{ err.@"error".type, err.@"error".code orelse "None", err.@"error".message });
                     return getErrorFromStatus(req.response.status);
                 }
             } else {
                 if (ResponseType) |T| {
-                    const response = try Response(T).parse(allocator, body);
+                    const response: T = try json.deserializeStructWithArena(T, allocator, body);
                     return response;
                 } else {
                     return;
