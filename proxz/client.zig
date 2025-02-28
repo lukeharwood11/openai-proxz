@@ -249,7 +249,7 @@ pub const OpenAI = struct {
     /// Makes a request to the OpenAI base_url provided to the client, with the corresponding method, path, and options provided.
     /// If there isn't a proxz method to hit an endpoint, this can be used and will automatically pass in required headers.
     /// ```zig
-    /// const response = try self.openai.request(.{
+    /// const response: ResponseBodyStruct = try self.openai.request(.{
     ///     .method = .POST, // .GET, .PUT, .etc.
     //      .path = "/my/endpoint",
     ///     .json = body,

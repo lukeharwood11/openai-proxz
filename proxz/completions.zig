@@ -1,5 +1,6 @@
 const std = @import("std");
 const client = @import("client.zig");
+const json = @import("json.zig");
 
 pub const ChatMessage = struct {
     role: []const u8,
@@ -125,26 +126,7 @@ pub const ChatCompletionsRequest = struct {
 
     /// Custom serialization method, to remove `null` fields.
     pub fn jsonStringify(self: ChatCompletionsRequest, ws: anytype) !void {
-        try ws.beginObject();
-        inline for (std.meta.fields(ChatCompletionsRequest)) |field| {
-            const val = @field(self, field.name);
-            const info = @typeInfo(@TypeOf(val));
-            switch (info) {
-                // can't compare null if not .Optional
-                .Optional => {
-                    if (val != null) {
-                        try ws.objectField(field.name);
-                        try ws.write(val);
-                    }
-                },
-                else => {
-                    try ws.objectField(field.name);
-                    try ws.write(val);
-                },
-            }
-            // std.debug.print("{s} - {s}: {any}\n\n", .{ @typeName(field.type), field.name, @field(self, field.name) });
-        }
-        try ws.endObject();
+        try json.serializeDropNulls(self, ws);
     }
 };
 

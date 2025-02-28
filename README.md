@@ -32,9 +32,6 @@ To install a specific version, run
 
 ```bash
 zig fetch --save "https://github.com/lukeharwood11/openai-proxz/archive/refs/tags/<version>.tar.gz"
-
-# latest version
-# zig fetch --save "https://github.com/lukeharwood11/openai-proxz/archive/refs/tags/v0.0.2.tar.gz"
 ```
 
 And add the following to your `build.zig`
@@ -115,7 +112,6 @@ std.log.debug("Model is owned by '{s}'", .{response.owned_by});
 ```zig
 var response = try openai.models.list();
 defer response.deinit();
-
 std.log.debug("The first model you have available is '{s}'", .{response.data[0].id})
 ```
 
