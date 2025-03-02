@@ -306,7 +306,6 @@ pub const OpenAI = struct {
     ///     .json = body,
     /// }, ResponseBodyStruct);
     /// defer response.deinit();
-    ///
     /// while (try response.next()) |val| {
     ///     std.debug.print("{s}", .{val.choices[0].delta.content});
     /// }
@@ -390,7 +389,6 @@ pub const OpenAI = struct {
     //      .path = "/my/endpoint",
     ///     .json = body,
     /// }, ResponseBodyStruct); // pass in null for no response body
-    ///
     /// ```
     /// Note that the `ResponseType` _must_ have a field called `arena` of type `*std.heap.ArenaAllocator` (or you will get a @compileError).
     /// This will be used to store the allocator that allocates all memory for the resulting struct.

@@ -17,7 +17,7 @@ fn validateStruct(comptime T: type) void {
     }
 }
 
-/// This will parse a string slice into type `T`, where `T` is a type that has a field `arena` of type `*std.heap.ArenaAllocator`
+/// This will parse a string slice into type `T`, where `T` is a type that has a field `arena` of type `*std.heap.ArenaAllocator`.
 /// All memory will managed by that arena allocator, and the type is reponsible for freeing that memory (via `arena.deinit()`) and destroying the arena ``
 pub fn deserializeStructWithArena(comptime T: type, allocator: std.mem.Allocator, slice: []const u8) !T {
     // validate the struct at compile time
