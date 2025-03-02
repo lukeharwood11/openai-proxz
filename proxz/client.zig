@@ -246,6 +246,127 @@ pub const OpenAI = struct {
         json: ?[]const u8 = null,
     };
 
+    fn Stream(comptime T: type) type {
+        return struct {
+            arena: *std.heap.ArenaAllocator,
+            reader: *std.http.Client.Request.Reader,
+            request: *std.http.Client.Request,
+            client: *std.http.Client,
+
+            const Self = @This();
+            pub fn init(allocator: std.mem.Allocator, client: *std.http.Client, req: *std.http.Client.Request) !Self {
+                const arena = try allocator.create(std.heap.ArenaAllocator);
+                arena.* = std.heap.ArenaAllocator.init(allocator);
+                errdefer allocator.destroy(arena);
+                const reader = try arena.allocator().create(std.http.Client.Request.Reader);
+                reader.* = req.reader();
+                return Self{
+                    .arena = arena,
+                    .request = req,
+                    .client = client,
+                    .reader = reader,
+                };
+            }
+
+            pub fn deinit(self: *Self) void {
+                self.arena.deinit();
+                self.request.deinit();
+                self.client.deinit();
+                self.arena.child_allocator.destroy(self.request);
+                self.arena.child_allocator.destroy(self.client);
+                self.arena.child_allocator.destroy(self.arena);
+            }
+
+            pub fn next(self: *Self) !?T {
+                while (try self.reader.readUntilDelimiterOrEofAlloc(self.arena.allocator(), '\n', 1024 * 1024)) |line| {
+                    // if empty, skip
+                    if (std.mem.trim(u8, line, " \t\r\n").len != 0) {
+                        var it = std.mem.splitSequence(u8, line, "data:");
+                        // skip over the first set, this is fine even if it doesn't exist
+                        _ = it.next();
+                        const stripped = std.mem.trim(u8, it.rest(), " \t\r\n");
+                        if (!std.mem.eql(u8, "[DONE]", stripped)) {
+                            return try std.json.parseFromSliceLeaky(T, self.arena.allocator(), stripped, .{
+                                .ignore_unknown_fields = true,
+                                .allocate = .alloc_always,
+                            });
+                        }
+                    }
+                }
+                return null;
+            }
+        };
+    }
+
+    pub fn requestStream(self: *const OpenAI, options: OpenAIRequest, comptime ResponseType: type) !Stream(ResponseType) {
+        const method = options.method;
+        const path = options.path;
+        const allocator = self.allocator;
+        const url_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ self.base_url, path });
+        defer allocator.free(url_string);
+
+        const uri = try std.Uri.parse(url_string);
+
+        const server_header_buffer = try allocator.alloc(u8, 8 * 1024 * 4);
+        defer allocator.free(server_header_buffer);
+
+        // Create a new client for each request to avoid connection pool issues
+        var client = try allocator.create(http.Client);
+        client.* = http.Client{ .allocator = allocator };
+        errdefer allocator.destroy(client);
+        errdefer client.deinit();
+        var backoff: f32 = INITIAL_RETRY_DELAY;
+
+        var req = try allocator.create(http.Client.Request);
+        errdefer allocator.destroy(req);
+        errdefer req.deinit();
+
+        for (0..self.max_retries + 1) |attempt| {
+            req.* = try client.open(method, uri, .{
+                .server_header_buffer = server_header_buffer,
+                .headers = self.headers,
+                .extra_headers = self.extra_headers,
+            });
+
+            if (options.json) |body| {
+                req.transfer_encoding = .{ .content_length = body.len };
+            }
+            try req.send();
+            if (options.json) |body| {
+                log.debug("{s}", .{body});
+                try req.writer().writeAll(body);
+                try req.finish();
+            }
+            try req.wait();
+            const status_int = @intFromEnum(req.response.status);
+            log.info("{s} - {s} - {d} {s}", .{ @tagName(method), url_string, status_int, req.response.status.phrase() orelse "Unknown" });
+            if (status_int < 200 or status_int >= 300) {
+                if (attempt != self.max_retries and @intFromEnum(req.response.status) >= 429) {
+                    // retry on 429, 500, and 503
+                    log.info("Retrying ({d}/{d}) after {d} seconds.", .{ attempt + 1, self.max_retries, backoff });
+                    std.time.sleep(@as(u64, @intFromFloat(backoff * std.time.ns_per_s)));
+                    backoff = if (backoff * 2 <= MAX_RETRY_DELAY) backoff * 2 else MAX_RETRY_DELAY;
+                } else {
+                    const reader = req.reader();
+                    const body = try reader.readAllAlloc(allocator, 1024 * 10);
+                    defer allocator.free(body);
+                    const err = json.deserializeStructWithArena(APIErrorResponse, allocator, body) catch {
+                        log.err("{s}", .{body});
+                        // if we can't parse the error, it was a bad request.
+                        return OpenAIError.BadRequest;
+                    };
+                    defer err.deinit();
+                    log.err("{s} ({s}): {s}", .{ err.@"error".type, err.@"error".code orelse "None", err.@"error".message });
+                    return getErrorFromStatus(req.response.status);
+                }
+            } else {
+                return try Stream(ResponseType).init(allocator, client, req);
+            }
+        }
+        // max_retries must be >= 0 (since it's usize) and loop condition is 0..max_retries+1
+        unreachable;
+    }
+
     /// Makes a request to the OpenAI base_url provided to the client, with the corresponding method, path, and options provided.
     /// If there isn't a proxz method to hit an endpoint, this can be used and will automatically pass in required headers.
     /// ```zig

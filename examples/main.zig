@@ -29,6 +29,47 @@ pub fn main() !void {
     var openai = try OpenAI.init(allocator, .{});
     defer openai.deinit();
 
+    const request = .{
+        .model = "gpt-4o-mini",
+        .messages = &[_]ChatMessage{
+            .{
+                .role = "user",
+                .content = "Write me a poem about lizards. Make it a paragraph or two.",
+            },
+        },
+        .stream = true,
+    };
+
+    const j = try std.json.stringifyAlloc(allocator, request, .{});
+    defer allocator.free(j);
+
+    const ChatCompletionChunkChoice = struct {
+        index: usize,
+        delta: struct {
+            content: []const u8 = "",
+        },
+        logprobs: ?[]const u8 = null,
+        finish_reason: ?[]const u8 = null,
+    };
+
+    const ChatCompletionChunk = struct {
+        id: []const u8,
+        object: []const u8,
+        created: f64,
+        model: []const u8,
+        service_tier: []const u8,
+        system_fingerprint: []const u8,
+        choices: []const ChatCompletionChunkChoice,
+    };
+
+    var stream = try openai.requestStream(.{ .method = .POST, .path = "/chat/completions", .json = j }, ChatCompletionChunk);
+    defer stream.deinit();
+    std.debug.print("\n", .{});
+    while (try stream.next()) |val| {
+        std.debug.print("{s}", .{val.choices[0].delta.content});
+    }
+    std.debug.print("\n", .{});
+
     var models_response = try openai.models.retrieve("gpt-4o");
     defer models_response.deinit();
 
@@ -40,7 +81,7 @@ pub fn main() !void {
     std.log.debug("The first model you have available is '{s}'", .{models_list.data[0].id});
 
     var chat_response = try openai.chat.completions.create(.{
-        .model = "gpt-4o",
+        .model = "gpt-4o-mini",
         .messages = &[_]ChatMessage{
             .{
                 .role = "user",
