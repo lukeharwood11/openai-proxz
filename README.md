@@ -5,11 +5,6 @@
 
 An OpenAI API library for the Zig programming language!
 
-|✨ Documentation ✨||
-|--|--|
-|📙 ProxZ Docs |<https://proxz.mle.academy> |
-|📗 OpenAI API Docs|<https://platform.openai.com/docs/api-reference>|
-
 ## Features
 
 - An easy to use interface, similar to that of `openai-python`
@@ -17,6 +12,11 @@ An OpenAI API library for the Zig programming language!
 - Environment variable config support for API keys, org. IDs, project IDs, and base urls
 - Response streaming support
 - Integration with the most popular OpenAI endpoints with a generic `request` method for missing endpoints
+
+|✨ Documentation ✨||
+|--|--|
+|📙 ProxZ Docs |<https://proxz.mle.academy> |
+|📗 OpenAI API Docs|<https://platform.openai.com/docs/api-reference>|
 
 ## Installation
 
