@@ -168,7 +168,6 @@ pub const OpenAIConfig = struct {
 /// by this struct.
 pub const OpenAI = struct {
     allocator: std.mem.Allocator,
-    client: std.http.Client,
     chat: chat.Chat,
     models: models.Models,
     embeddings: embeddings.Embeddings,
@@ -214,7 +213,6 @@ pub const OpenAI = struct {
         };
         self.* = OpenAI{
             .allocator = allocator,
-            .client = std.http.Client{ .allocator = arena.allocator() },
             .chat = undefined, // have to pass in self
             .embeddings = undefined, // have to pass in self
             .models = undefined, // have to pass in self
@@ -284,7 +282,6 @@ pub const OpenAI = struct {
     }
 
     pub fn deinit(self: *OpenAI) void {
-        self.client.deinit();
         self.chat.deinit();
         self.embeddings.deinit();
         self.arena.deinit();
