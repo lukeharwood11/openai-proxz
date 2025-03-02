@@ -11,6 +11,7 @@
 //!
 const std = @import("std");
 const chat = @import("chat.zig");
+const completions = @import("completions.zig");
 const embeddings = @import("embeddings.zig");
 const models = @import("models.zig");
 const json = @import("json.zig");
@@ -467,6 +468,28 @@ pub const OpenAI = struct {
 
 test "OpenAI Client - usage" {
     const allocator = std.testing.allocator;
-    const client = try OpenAI.init(allocator, .{});
+    const client = try OpenAI.init(allocator, .{
+        .api_key = "my-test-api-key",
+    });
     defer client.deinit();
+}
+
+test "OpenAI Client - bad auth" {
+    const allocator = std.testing.allocator;
+    const client = try OpenAI.init(allocator, .{
+        .api_key = "my-test-api-key",
+    });
+    defer client.deinit();
+
+    const response = client.chat.completions.create(.{
+        .model = "gpt-4o-mini",
+        .messages = &[_]completions.ChatMessage{
+            .{
+                .role = "user",
+                .content = "Hello, world!",
+            },
+        },
+    });
+
+    try std.testing.expectError(OpenAIError.InvalidAuthentication, response);
 }

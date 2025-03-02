@@ -5,7 +5,7 @@
 
 An OpenAI API library for the Zig programming language!
 
-## Features
+## ⭐️ Features ⭐️
 
 - An easy to use interface, similar to that of `openai-python`
 - Built-in retry logic
