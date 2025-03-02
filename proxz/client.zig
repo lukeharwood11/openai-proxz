@@ -10,35 +10,21 @@
 //!```
 //!
 const std = @import("std");
-const http = std.http;
-const log = std.log.scoped(.proxz);
 const chat = @import("chat.zig");
 const embeddings = @import("embeddings.zig");
 const models = @import("models.zig");
 const json = @import("json.zig");
 
+const log = std.log.scoped(.proxz);
+
 const INITIAL_RETRY_DELAY = 0.5;
 const MAX_RETRY_DELAY = 8;
 
-pub const APIError = struct {
+const APIError = struct {
     message: []const u8,
     type: []const u8,
     param: ?[]const u8 = null,
     code: ?[]const u8 = null,
-};
-
-/// Options to be passed through to the `OpenAI.init` function.
-pub const OpenAIConfig = struct {
-    /// Your OpenAI API key. If left null, it will attempt to read from the `OPENAI_API_KEY` environment variable.
-    api_key: ?[]const u8 = null,
-    /// Your OpenAI base url. If left null, it will attempt to read from the `OPENAI_BASE_URL` environment variable, otherwise will default to `"https://api.openai.com/v1"`.
-    base_url: ?[]const u8 = null,
-    /// Your OpenAI organization id. If left null, it will attempt to read from `OPENAI_ORG_ID` environment variable.
-    organization: ?[]const u8 = null,
-    /// Your OpenAI project id. If left null, it will attempt to read from `OPENAI_project` environment variable.
-    project: ?[]const u8 = null,
-    /// The maximum number of retries the client will attempt. Defaults to `3`.
-    max_retries: usize = 3,
 };
 
 /// OpenAI Error Response Body.
@@ -53,16 +39,62 @@ const APIErrorResponse = struct {
     }
 };
 
-/// Errors pertaining to OpenAI struct creation
-pub const OpenAIClientError = error{
-    OpenAIAPIKeyNotSet,
-    MemoryError,
-};
-
 /// Internal model for API calls
 const RequestOptions = struct {
     body: ?[]const u8 = null,
 };
+
+pub fn Stream(comptime T: type) type {
+    return struct {
+        arena: *std.heap.ArenaAllocator,
+        reader: *std.http.Client.Request.Reader,
+        request: *std.http.Client.Request,
+        client: *std.http.Client,
+
+        const Self = @This();
+        pub fn init(allocator: std.mem.Allocator, client: *std.http.Client, req: *std.http.Client.Request) !Self {
+            const arena = try allocator.create(std.heap.ArenaAllocator);
+            arena.* = std.heap.ArenaAllocator.init(allocator);
+            errdefer allocator.destroy(arena);
+            const reader = try arena.allocator().create(std.http.Client.Request.Reader);
+            reader.* = req.reader();
+            return Self{
+                .arena = arena,
+                .request = req,
+                .client = client,
+                .reader = reader,
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.arena.deinit();
+            self.request.deinit();
+            self.client.deinit();
+            self.arena.child_allocator.destroy(self.request);
+            self.arena.child_allocator.destroy(self.client);
+            self.arena.child_allocator.destroy(self.arena);
+        }
+
+        pub fn next(self: *Self) !?T {
+            while (try self.reader.readUntilDelimiterOrEofAlloc(self.arena.allocator(), '\n', 1024 * 1024)) |line| {
+                // if empty, skip
+                if (std.mem.trim(u8, line, " \t\r\n").len != 0) {
+                    var it = std.mem.splitSequence(u8, line, "data:");
+                    // skip over the first set, this is fine even if it doesn't exist
+                    _ = it.next();
+                    const stripped = std.mem.trim(u8, it.rest(), " \t\r\n");
+                    if (!std.mem.eql(u8, "[DONE]", stripped)) {
+                        return try std.json.parseFromSliceLeaky(T, self.arena.allocator(), stripped, .{
+                            .ignore_unknown_fields = true,
+                            .allocate = .alloc_always,
+                        });
+                    }
+                }
+            }
+            return null;
+        }
+    };
+}
 
 /// Different OpenAI API errors:
 /// https://platform.openai.com/docs/guides/error-codes
@@ -104,7 +136,7 @@ pub const OpenAIError = error{
     Unknown,
 };
 
-pub fn getErrorFromStatus(status: std.http.Status) OpenAIError {
+fn getErrorFromStatus(status: std.http.Status) OpenAIError {
     return switch (status) {
         .bad_request => OpenAIError.BadRequest,
         .not_found => OpenAIError.NotFound,
@@ -117,12 +149,26 @@ pub fn getErrorFromStatus(status: std.http.Status) OpenAIError {
     };
 }
 
+/// Options to be passed through to the `OpenAI.init` function.
+pub const OpenAIConfig = struct {
+    /// Your OpenAI API key. If left null, it will attempt to read from the `OPENAI_API_KEY` environment variable.
+    api_key: ?[]const u8 = null,
+    /// Your OpenAI base url. If left null, it will attempt to read from the `OPENAI_BASE_URL` environment variable, otherwise will default to `"https://api.openai.com/v1"`.
+    base_url: ?[]const u8 = null,
+    /// Your OpenAI organization id. If left null, it will attempt to read from `OPENAI_ORG_ID` environment variable.
+    organization: ?[]const u8 = null,
+    /// Your OpenAI project id. If left null, it will attempt to read from `OPENAI_project` environment variable.
+    project: ?[]const u8 = null,
+    /// The maximum number of retries the client will attempt. Defaults to `3`.
+    max_retries: usize = 3,
+};
+
 /// A general purpose openai client that initializes all base parameters (API key, Base URL, Org ID, Project ID)
 /// and through which all requests should be made through. The creator must call `deinit` to clean up all resources created
 /// by this struct.
 pub const OpenAI = struct {
     allocator: std.mem.Allocator,
-    client: http.Client,
+    client: std.http.Client,
     chat: chat.Chat,
     models: models.Models,
     embeddings: embeddings.Embeddings,
@@ -130,10 +176,16 @@ pub const OpenAI = struct {
     base_url: []const u8,
     organization: ?[]const u8,
     project: ?[]const u8,
-    headers: http.Client.Request.Headers,
-    extra_headers: []const http.Header,
+    headers: std.http.Client.Request.Headers,
+    extra_headers: []const std.http.Header,
     arena: *std.heap.ArenaAllocator,
     max_retries: usize,
+
+    /// Errors pertaining to OpenAI struct creation
+    pub const OpenAIClientError = error{
+        OpenAIAPIKeyNotSet,
+        MemoryError,
+    };
 
     fn moveNullableString(self: *OpenAI, str: ?[]const u8) !?[]const u8 {
         if (str) |s| {
@@ -162,7 +214,7 @@ pub const OpenAI = struct {
         };
         self.* = OpenAI{
             .allocator = allocator,
-            .client = http.Client{ .allocator = arena.allocator() },
+            .client = std.http.Client{ .allocator = arena.allocator() },
             .chat = undefined, // have to pass in self
             .embeddings = undefined, // have to pass in self
             .models = undefined, // have to pass in self
@@ -210,7 +262,7 @@ pub const OpenAI = struct {
         };
         self.headers = .{ .authorization = .{ .override = auth_header }, .content_type = .{ .override = "application/json" } };
         if (self.project != null or self.organization != null) {
-            var arr = std.ArrayList(http.Header).initCapacity(self.arena.allocator(), 2) catch {
+            var arr = std.ArrayList(std.http.Header).initCapacity(self.arena.allocator(), 2) catch {
                 return OpenAIClientError.MemoryError;
             };
             defer arr.deinit();
@@ -241,63 +293,28 @@ pub const OpenAI = struct {
     }
 
     pub const OpenAIRequest = struct {
-        method: http.Method,
+        method: std.http.Method,
         path: []const u8,
         json: ?[]const u8 = null,
     };
 
-    fn Stream(comptime T: type) type {
-        return struct {
-            arena: *std.heap.ArenaAllocator,
-            reader: *std.http.Client.Request.Reader,
-            request: *std.http.Client.Request,
-            client: *std.http.Client,
-
-            const Self = @This();
-            pub fn init(allocator: std.mem.Allocator, client: *std.http.Client, req: *std.http.Client.Request) !Self {
-                const arena = try allocator.create(std.heap.ArenaAllocator);
-                arena.* = std.heap.ArenaAllocator.init(allocator);
-                errdefer allocator.destroy(arena);
-                const reader = try arena.allocator().create(std.http.Client.Request.Reader);
-                reader.* = req.reader();
-                return Self{
-                    .arena = arena,
-                    .request = req,
-                    .client = client,
-                    .reader = reader,
-                };
-            }
-
-            pub fn deinit(self: *Self) void {
-                self.arena.deinit();
-                self.request.deinit();
-                self.client.deinit();
-                self.arena.child_allocator.destroy(self.request);
-                self.arena.child_allocator.destroy(self.client);
-                self.arena.child_allocator.destroy(self.arena);
-            }
-
-            pub fn next(self: *Self) !?T {
-                while (try self.reader.readUntilDelimiterOrEofAlloc(self.arena.allocator(), '\n', 1024 * 1024)) |line| {
-                    // if empty, skip
-                    if (std.mem.trim(u8, line, " \t\r\n").len != 0) {
-                        var it = std.mem.splitSequence(u8, line, "data:");
-                        // skip over the first set, this is fine even if it doesn't exist
-                        _ = it.next();
-                        const stripped = std.mem.trim(u8, it.rest(), " \t\r\n");
-                        if (!std.mem.eql(u8, "[DONE]", stripped)) {
-                            return try std.json.parseFromSliceLeaky(T, self.arena.allocator(), stripped, .{
-                                .ignore_unknown_fields = true,
-                                .allocate = .alloc_always,
-                            });
-                        }
-                    }
-                }
-                return null;
-            }
-        };
-    }
-
+    /// Creates a request to OpenAI expecting SSE events. Returns a `Stream` struct wrapping the response type.
+    /// Makes a request to the OpenAI base_url provided to the client, with the corresponding method, path, and options provided.
+    /// If there isn't a proxz method to hit an endpoint, this can be used and will automatically pass in required headers.
+    /// ```zig
+    /// var response: Stream(ResponseBodyStruct) = try self.openai.requestStream(.{
+    ///     .method = .POST, // .GET, .PUT, .etc.
+    //      .path = "/my/endpoint",
+    ///     .json = body,
+    /// }, ResponseBodyStruct);
+    /// defer response.deinit();
+    ///
+    /// while (try response.next()) |val| {
+    ///     std.debug.print("{s}", .{val.choices[0].delta.content});
+    /// }
+    /// ```
+    /// The user is responsible for managing that memory.
+    /// Call `deinit` on the response.
     pub fn requestStream(self: *const OpenAI, options: OpenAIRequest, comptime ResponseType: type) !Stream(ResponseType) {
         const method = options.method;
         const path = options.path;
@@ -311,13 +328,13 @@ pub const OpenAI = struct {
         defer allocator.free(server_header_buffer);
 
         // Create a new client for each request to avoid connection pool issues
-        var client = try allocator.create(http.Client);
-        client.* = http.Client{ .allocator = allocator };
+        var client = try allocator.create(std.http.Client);
+        client.* = std.http.Client{ .allocator = allocator };
         errdefer allocator.destroy(client);
         errdefer client.deinit();
         var backoff: f32 = INITIAL_RETRY_DELAY;
 
-        var req = try allocator.create(http.Client.Request);
+        var req = try allocator.create(std.http.Client.Request);
         errdefer allocator.destroy(req);
         errdefer req.deinit();
 
@@ -393,7 +410,7 @@ pub const OpenAI = struct {
         defer allocator.free(server_header_buffer);
 
         // Create a new client for each request to avoid connection pool issues
-        var client = http.Client{ .allocator = allocator };
+        var client = std.http.Client{ .allocator = allocator };
         defer client.deinit();
         var backoff: f32 = INITIAL_RETRY_DELAY;
 

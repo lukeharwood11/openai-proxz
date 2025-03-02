@@ -15,6 +15,7 @@ An OpenAI API library for the Zig programming language!
 - An easy to use interface, similar to that of `openai-python`
 - Built-in retry logic
 - Environment variable config support for API keys, org. IDs, project IDs, and base urls
+- Response streaming support
 - Integration with the most popular OpenAI endpoints with a generic `request` method for missing endpoints
 
 ## Installation
@@ -63,6 +64,8 @@ defer openai.deinit();
 
 ### Chat Completions
 
+#### Regular
+
 ```zig
 const ChatMessage = proxz.ChatMessage;
 
@@ -78,6 +81,27 @@ var response = try openai.chat.completions.create(.{
 // This will free all the memory allocated for the response
 defer response.deinit();
 std.log.debug("{s}", .{response.choices[0].message.content});
+```
+
+#### Streamed Response
+
+```zig
+var stream = try openai.chat.completions.createStream(.{
+    .model = "gpt-4o-mini",
+    .messages = &[_]ChatMessage{
+        .{
+            .role = "user",
+            .content = "Write me a poem about lizards. Make it a paragraph or two.",
+        },
+    },
+});
+defer stream.deinit();
+
+std.debug.print("\n", .{});
+while (try stream.next()) |val| {
+    std.debug.print("{s}", .{val.choices[0].delta.content});
+}
+std.debug.print("\n", .{});
 ```
 
 ### Embeddings

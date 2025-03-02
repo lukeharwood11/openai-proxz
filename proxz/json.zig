@@ -69,30 +69,6 @@ pub fn deserializeStructWithArena(comptime T: type, allocator: std.mem.Allocator
     return self;
 }
 
-/// Custom serialization method, to remove `null` fields.
-pub fn serializeDropNulls(element: anytype, ws: anytype) !void {
-    try ws.beginObject();
-    const T = @TypeOf(element);
-    inline for (std.meta.fields(T)) |field| {
-        const val = @field(element, field.name);
-        const info = @typeInfo(@TypeOf(val));
-        switch (info) {
-            // can't compare null if not .Optional
-            .Optional => {
-                if (val != null) {
-                    try ws.objectField(field.name);
-                    try ws.write(val);
-                }
-            },
-            else => {
-                try ws.objectField(field.name);
-                try ws.write(val);
-            },
-        }
-    }
-    try ws.endObject();
-}
-
 test "deserializeStructWithArena-success" {
     const allocator = std.testing.allocator;
     const slice =
