@@ -5,27 +5,29 @@
 
 An OpenAI API library for the Zig programming language!
 
-|✨ Documentation ✨||
-|--|--|
-|📙 ProxZ Docs |<https://proxz.mle.academy> |
-|📗 OpenAI API Docs|<https://platform.openai.com/docs/api-reference>|
-
-## Features
+## ⭐️ Features ⭐️
 
 - An easy to use interface, similar to that of `openai-python`
 - Built-in retry logic
 - Environment variable config support for API keys, org. IDs, project IDs, and base urls
-- Integration with the most popular OpenAI endpoints with a generic `request` method for missing endpoints
+- Response streaming support
+- Integration with the most popular OpenAI endpoints with a generic `request`/`requestStream` method for missing endpoints
 
 ## Installation
 
 > [!NOTE]  
 > This is only compatible with zig version 0.13.0 at this time.
 
-To install `proxz`, run
+To install the latest version of `proxz`, run
 
 ```bash
  zig fetch --save "git+https://github.com/lukeharwood11/openai-proxz"
+```
+
+To install a specific version, run
+
+```bash
+zig fetch --save "https://github.com/lukeharwood11/openai-proxz/archive/refs/tags/<version>.tar.gz"
 ```
 
 And add the following to your `build.zig`
@@ -40,6 +42,11 @@ exe.root_module.addImport("proxz", proxz.module("proxz"));
 ```
 
 ## Usage
+
+|✨ Documentation ✨||
+|--|--|
+|📙 ProxZ Docs |<https://proxz.mle.academy> |
+|📗 OpenAI API Docs|<https://platform.openai.com/docs/api-reference>|
 
 ### Client Configuration
 
@@ -57,6 +64,8 @@ defer openai.deinit();
 
 ### Chat Completions
 
+#### Regular
+
 ```zig
 const ChatMessage = proxz.ChatMessage;
 
@@ -71,26 +80,63 @@ var response = try openai.chat.completions.create(.{
 });
 // This will free all the memory allocated for the response
 defer response.deinit();
-const completions = response.data;
-std.log.debug("{s}", .{completions.choices[0].message.content});
+std.log.debug("{s}", .{response.choices[0].message.content});
+```
+
+#### Streamed Response
+
+```zig
+var stream = try openai.chat.completions.createStream(.{
+    .model = "gpt-4o-mini",
+    .messages = &[_]ChatMessage{
+        .{
+            .role = "user",
+            .content = "Write me a poem about lizards. Make it a paragraph or two.",
+        },
+    },
+});
+defer stream.deinit();
+
+std.debug.print("\n", .{});
+while (try stream.next()) |val| {
+    std.debug.print("{s}", .{val.choices[0].delta.content});
+}
+std.debug.print("\n", .{});
 ```
 
 ### Embeddings
 
 ```zig
 const inputs = [_][]const u8{ "Hello", "Foo", "Bar" };
-const embeddings_response = try openai.embeddings.create(.{
+const response = try openai.embeddings.create(.{
     .model = "text-embedding-3-small",
     .input = &inputs,
 });
 // Don't forget to free resources!
-defer embeddings_response.deinit();
-const embeddings = embeddings_response.data;
+defer response.deinit();
 std.log.debug("Model: {s}\nNumber of Embeddings: {d}\nDimensions of Embeddings: {d}", .{
-    embeddings.model,
-    embeddings.data.len,
-    embeddings.data[0].embedding.len,
+    response.model,
+    response.data.len,
+    response.data[0].embedding.len,
 });
+```
+
+### Models
+
+#### Get model details
+
+```zig
+var response = try openai.models.retrieve("gpt-4o");
+defer response.deinit();
+std.log.debug("Model is owned by '{s}'", .{response.owned_by});
+```
+
+#### List all models
+
+```zig
+var response = try openai.models.list();
+defer response.deinit();
+std.log.debug("The first model you have available is '{s}'", .{response.data[0].id})
 ```
 
 ## Configuring Logging

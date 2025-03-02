@@ -1,22 +1,14 @@
 const std = @import("std");
 const client = @import("client.zig");
+const json = @import("json.zig");
+const utils = @import("utils.zig");
 
 pub const ChatMessage = struct {
     role: []const u8,
     content: []const u8,
 };
 
-pub const ChatModelType = enum { reasoning, regular };
-
-/// Map of model names to the type of model they are, used for validation.
-pub const CHAT_MODELS: std.StaticStringMap([]const u8) = std.StaticStringMap(ChatModelType).initComptime(.{
-    .{ "gpt-4o", .regular },
-    .{ "gpt-4o-mini", .regular },
-    .{ "o1", .reasoning },
-    .{ "o1-preview", .reasoning },
-    .{ "o3-mini", .reasoning },
-});
-
+/// Request for chat completions
 pub const ChatCompletionsRequest = struct {
     /// Required: ID of the model to use
     model: []const u8,
@@ -122,51 +114,9 @@ pub const ChatCompletionsRequest = struct {
 
     /// Optional: Unique identifier for end-user
     user: ?[]const u8 = null,
-
-    /// Custom serialization method, to remove `null` fields.
-    pub fn jsonStringify(self: ChatCompletionsRequest, ws: anytype) !void {
-        try ws.beginObject();
-        inline for (std.meta.fields(ChatCompletionsRequest)) |field| {
-            const val = @field(self, field.name);
-            const info = @typeInfo(@TypeOf(val));
-            switch (info) {
-                // can't compare null if not .Optional
-                .Optional => {
-                    if (val != null) {
-                        try ws.objectField(field.name);
-                        try ws.write(val);
-                    }
-                },
-                else => {
-                    try ws.objectField(field.name);
-                    try ws.write(val);
-                },
-            }
-            // std.debug.print("{s} - {s}: {any}\n\n", .{ @typeName(field.type), field.name, @field(self, field.name) });
-        }
-        try ws.endObject();
-    }
 };
 
-pub const CompletionTokensDetails = struct {
-    reasoning_tokens: ?u64 = null,
-    audio_tokens: ?u64 = null,
-    accepted_prediction_tokens: ?u64 = null,
-    rejected_prediction_tokens: ?u64 = null,
-};
-
-pub const PromptTokensDetails = struct {
-    cached_tokens: ?u64 = null,
-    audio_tokens: ?u64 = null,
-};
-
-pub const Usage = struct {
-    prompt_tokens: u64,
-    completion_tokens: u64,
-    total_tokens: u64,
-    prompt_tokens_details: ?PromptTokensDetails = null,
-    completion_tokens_details: ?CompletionTokensDetails = null,
-};
+const ChatCompletionsBodyWithStreamField = utils.mergeStructs(ChatCompletionsRequest, struct { stream: bool });
 
 pub const Message = struct {
     role: []const u8,
@@ -175,24 +125,59 @@ pub const Message = struct {
     function_call: ?[]const u8 = null,
 };
 
-pub const Choice = struct {
-    index: u64,
-    message: Message,
-    logprobs: ?[]const u8 = null,
-    finish_reason: []const u8,
+/// A streamed chat completions payload
+pub const ChatCompletionChunk = struct {
+    id: []const u8,
+    object: []const u8,
+    created: f64,
+    model: []const u8,
+    service_tier: []const u8,
+    system_fingerprint: []const u8,
+    choices: []const struct {
+        index: usize,
+        delta: struct {
+            content: []const u8 = "",
+        },
+        logprobs: ?[]const u8 = null,
+        finish_reason: ?[]const u8 = null,
+    },
 };
 
-// A chat/completion payload.
-//
-// TODO: experiment with `jsonParse` to allocate memory with the arena allocator.
+/// A chat completions payload.
 pub const ChatCompletion = struct {
     id: []const u8,
     object: []const u8,
     created: i64,
     model: []const u8,
-    choices: []Choice,
-    usage: Usage,
+    choices: []struct {
+        index: u64,
+        message: Message,
+        logprobs: ?[]const u8 = null,
+        finish_reason: []const u8,
+    },
+    usage: struct {
+        prompt_tokens: u64,
+        completion_tokens: u64,
+        total_tokens: u64,
+        prompt_tokens_details: ?struct {
+            cached_tokens: ?u64 = null,
+            audio_tokens: ?u64 = null,
+        } = null,
+        completion_tokens_details: ?struct {
+            reasoning_tokens: ?u64 = null,
+            audio_tokens: ?u64 = null,
+            accepted_prediction_tokens: ?u64 = null,
+            rejected_prediction_tokens: ?u64 = null,
+        } = null,
+    },
+    service_tier: []const u8,
     system_fingerprint: ?[]const u8 = null,
+    arena: *std.heap.ArenaAllocator,
+
+    pub fn deinit(self: *const ChatCompletion) void {
+        self.arena.deinit();
+        self.arena.child_allocator.destroy(self.arena);
+    }
 };
 
 /// A struct that contains methods for creating chat completions
@@ -209,12 +194,12 @@ pub const Completions = struct {
 
     pub fn deinit(_: *Completions) void {}
 
-    /// Creates a chat completion request and returns a Response(ChatCompletion)
+    /// Creates a chat completion request and returns a ChatCompletion
     /// The caller is also responsible for calling deinit() on the response to free all allocated memory.
     /// ### Example:
     /// ```zig
     /// response = openai.chat.completions.create(.{
-    ///     .model = "gpt-4o",
+    ///     .model = "gpt-4o-mini",
     ///     .messages = &[_]ChatMessage{
     ///         .{
     ///             .role = "user",
@@ -223,18 +208,61 @@ pub const Completions = struct {
     ///     },
     /// });
     /// defer response.deinit();
-    /// const chat_completion: ChatCompletion = response.data;
-    /// std.debug.print("{s}", .{chat_completion.choices[0].message.content});
+    /// std.debug.print("{s}", .{response.choices[0].message.content});
     /// ```
-    pub fn create(self: *Completions, request: ChatCompletionsRequest) !client.Response(ChatCompletion) {
-        const allocator = self.openai.arena.allocator();
-        const body = try std.json.stringifyAlloc(allocator, request, .{});
+    pub fn create(self: *Completions, request: ChatCompletionsRequest) !ChatCompletion {
+        const allocator = self.openai.allocator;
+        const body = try std.json.stringifyAlloc(allocator, request, .{
+            .emit_null_optional_fields = false,
+        });
         defer allocator.free(body);
-        const response = try self.openai.request(.{
+        const response: ChatCompletion = try self.openai.request(.{
             .method = .POST,
             .path = "/chat/completions",
             .json = body,
         }, ChatCompletion);
+        return response;
+    }
+
+    /// Creates a chat completion request and returns a `Stream(ChatCompletionChunk)`
+    /// The caller is also responsible for calling deinit() on the stream to free all allocated memory.
+    /// ### Example:
+    /// var stream = try openai.chat.completions.createStream(.{
+    ///     .model = "gpt-4o-mini",
+    ///     .messages = &[_]ChatMessage{
+    ///         .{
+    ///             .role = "user",
+    ///             .content = "Write me a poem about lizards. Make it a paragraph or two.",
+    ///         },
+    ///     },
+    /// });
+    /// defer stream.deinit();
+    /// std.debug.print("\n", .{});
+    /// while (try stream.next()) |val| {
+    ///     std.debug.print("{s}", .{val.choices[0].delta.content});
+    /// }
+    /// std.debug.print("\n", .{});
+    pub fn createStream(self: *const Completions, request: ChatCompletionsRequest) !client.Stream(ChatCompletionChunk) {
+        const allocator = self.openai.allocator;
+
+        // copy all fields over to a new struct
+        var payload: ChatCompletionsBodyWithStreamField = undefined;
+        const ti = @typeInfo(ChatCompletionsRequest);
+        inline for (ti.Struct.fields) |field| {
+            @field(payload, field.name) = @field(request, field.name);
+        }
+        // force the stream to be set
+        payload.stream = true;
+
+        const body = try std.json.stringifyAlloc(allocator, payload, .{
+            .emit_null_optional_fields = false,
+        });
+        defer allocator.free(body);
+        const response = try self.openai.requestStream(.{
+            .method = .POST,
+            .path = "/chat/completions",
+            .json = body,
+        }, ChatCompletionChunk);
         return response;
     }
 };

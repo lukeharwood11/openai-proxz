@@ -10,11 +10,16 @@ pub const EmbeddingsRequest = struct {
     user: ?[]const u8 = null,
 };
 
-/// Content from `EmbeddingsResponse.data`
-const EmbeddingObject = struct {
+const EmbeddingObjectResponse = struct {
     object: []const u8,
     embedding: []f64,
     index: usize,
+    arena: *std.heap.ArenaAllocator,
+
+    pub fn deinit(self: *const EmbeddingObjectResponse) void {
+        self.arena.deinit();
+        self.arena.child_allocator.destroy(self.arena);
+    }
 };
 
 /// Usage object for `EmbeddingsResponse.usage`
@@ -23,12 +28,26 @@ const EmbeddingsUsage = struct {
     total_tokens: usize,
 };
 
+const EmbeddingObject = struct {
+    object: []const u8,
+    embedding: []f64,
+    index: usize,
+};
+
 /// The embeddings response object
-const EmbeddingsResponse = struct {
+/// The user is responsible for calling the deinit method on this object.
+const EmbeddingResponse = struct {
     object: []const u8,
     data: []const EmbeddingObject,
     model: []const u8,
     usage: EmbeddingsUsage,
+    arena: *std.heap.ArenaAllocator,
+
+    /// This will deinitialize all memory created for this response
+    pub fn deinit(self: *const EmbeddingResponse) void {
+        self.arena.deinit();
+        self.arena.child_allocator.destroy(self.arena);
+    }
 };
 
 /// Module for `/embeddings` endpoints
@@ -44,14 +63,16 @@ pub const Embeddings = struct {
     /// Sends `POST` request to `/embeddings` with the given `EmbeddingsRequest`.
     /// The caller is also responsible for calling deinit() on the response to free all allocated memory.
     /// Returns a `client.Resource` wrapper containing an `EmbeddingsResponse`.
-    pub fn create(self: *Embeddings, request: EmbeddingsRequest) !client.Response(EmbeddingsResponse) {
-        const body = try std.json.stringifyAlloc(self.openai.allocator, request, .{});
+    pub fn create(self: *Embeddings, request: EmbeddingsRequest) !EmbeddingResponse {
+        const body = try std.json.stringifyAlloc(self.openai.allocator, request, .{
+            .emit_null_optional_fields = false,
+        });
         defer self.openai.allocator.free(body);
-        const response = try self.openai.request(.{
+        const response: EmbeddingResponse = try self.openai.request(.{
             .method = .POST,
             .path = "/embeddings",
             .json = body,
-        }, EmbeddingsResponse);
+        }, EmbeddingResponse);
         return response;
     }
 
