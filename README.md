@@ -13,11 +13,6 @@ An OpenAI API library for the Zig programming language!
 - Response streaming support
 - Integration with the most popular OpenAI endpoints with a generic `request` method for missing endpoints
 
-|✨ Documentation ✨||
-|--|--|
-|📙 ProxZ Docs |<https://proxz.mle.academy> |
-|📗 OpenAI API Docs|<https://platform.openai.com/docs/api-reference>|
-
 ## Installation
 
 > [!NOTE]  
@@ -47,6 +42,11 @@ exe.root_module.addImport("proxz", proxz.module("proxz"));
 ```
 
 ## Usage
+
+|✨ Documentation ✨||
+|--|--|
+|📙 ProxZ Docs |<https://proxz.mle.academy> |
+|📗 OpenAI API Docs|<https://platform.openai.com/docs/api-reference>|
 
 ### Client Configuration
 
