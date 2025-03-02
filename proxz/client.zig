@@ -449,7 +449,7 @@ pub const OpenAI = struct {
                         return OpenAIError.BadRequest;
                     };
                     defer err.deinit();
-                    log.err("{s} ({s}): {s}", .{ err.@"error".type, err.@"error".code orelse "None", err.@"error".message });
+                    log.info("{s} ({s}): {s}", .{ err.@"error".type, err.@"error".code orelse "None", err.@"error".message });
                     return getErrorFromStatus(req.response.status);
                 }
             } else {
