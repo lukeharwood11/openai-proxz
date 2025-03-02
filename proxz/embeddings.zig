@@ -64,7 +64,9 @@ pub const Embeddings = struct {
     /// The caller is also responsible for calling deinit() on the response to free all allocated memory.
     /// Returns a `client.Resource` wrapper containing an `EmbeddingsResponse`.
     pub fn create(self: *Embeddings, request: EmbeddingsRequest) !EmbeddingResponse {
-        const body = try std.json.stringifyAlloc(self.openai.allocator, request, .{});
+        const body = try std.json.stringifyAlloc(self.openai.allocator, request, .{
+            .emit_null_optional_fields = false,
+        });
         defer self.openai.allocator.free(body);
         const response: EmbeddingResponse = try self.openai.request(.{
             .method = .POST,
