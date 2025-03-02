@@ -69,7 +69,7 @@ pub fn deserializeStructWithArena(comptime T: type, allocator: std.mem.Allocator
     return self;
 }
 
-test "deserializeStructWithArena-success" {
+test "deserializeStructWithArena - success" {
     const allocator = std.testing.allocator;
     const slice =
         \\ {

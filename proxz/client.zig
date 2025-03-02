@@ -464,3 +464,9 @@ pub const OpenAI = struct {
         unreachable;
     }
 };
+
+test "OpenAI Client - usage" {
+    const allocator = std.testing.allocator;
+    const client = try OpenAI.init(allocator, .{});
+    defer client.deinit();
+}

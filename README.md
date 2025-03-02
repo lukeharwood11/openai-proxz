@@ -11,7 +11,7 @@ An OpenAI API library for the Zig programming language!
 - Built-in retry logic
 - Environment variable config support for API keys, org. IDs, project IDs, and base urls
 - Response streaming support
-- Integration with the most popular OpenAI endpoints with a generic `request` method for missing endpoints
+- Integration with the most popular OpenAI endpoints with a generic `request`/`requestStream` method for missing endpoints
 
 ## Installation
 
