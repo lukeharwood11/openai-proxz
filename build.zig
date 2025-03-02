@@ -18,6 +18,20 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
     exe.root_module.addImport("proxz", proxz_module);
 
+    const docs = b.addObject(.{
+        .name = "proxz",
+        .root_source_file = b.path("proxz/proxz.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const build_docs = b.addInstallDirectory(.{
+        .source_dir = docs.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    const build_docs_step = b.step("docs", "Build the proxz docs");
+    build_docs_step.dependOn(&build_docs.step);
+
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {

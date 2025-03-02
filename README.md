@@ -165,5 +165,5 @@ Contributions are welcome and encouraged! Submit an issue for any bugs/feature r
 ## Building Docs
 
 ```bash
-zig build-lib -femit-docs proxz/proxz.zig
+zig build docs
 ```
