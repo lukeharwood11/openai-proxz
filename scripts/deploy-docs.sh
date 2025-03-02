@@ -2,14 +2,14 @@
 
 # build documentation
 echo "Building documentation..."
-zig build-lib -femit-docs proxz/proxz.zig
+zig build docs
 
 # Exit on any error
 set -e
 
 # Configuration
 BUCKET="s3://proxz.lukeharwood.dev"
-BUILD_DIR="docs"
+BUILD_DIR="zig-out/docs"
 
 # Check if build directory exists
 if [ ! -d "$BUILD_DIR" ]; then
