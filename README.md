@@ -1,9 +1,12 @@
-![Static Badge](https://img.shields.io/badge/zig-0.13.0-%23F7A41D?logo=zig&logoColor=%23F7A41D)
-![Static Badge](https://img.shields.io/badge/License-MIT-blue)
-
-# ProxZ 🦎
-
-An OpenAI API library for the Zig programming language!
+<div align="center">
+ <h1>ProxZ</h1>
+ <img src="https://img.shields.io/badge/zig-0.14.0-%23F7A41D?logo=zig&logoColor=%23F7A41D" />
+ <img src="https://img.shields.io/badge/zig-0.13.0-white?logo=zig&logoColor=white" />
+ <img src="https://img.shields.io/badge/License-MIT-blue" />
+ <br />
+ <br />
+ An OpenAI API library for the Zig programming language!
+</div>
 
 ## ⭐️ Features ⭐️
 
@@ -14,9 +17,6 @@ An OpenAI API library for the Zig programming language!
 - Integration with the most popular OpenAI endpoints with a generic `request`/`requestStream` method for missing endpoints
 
 ## Installation
-
-> [!NOTE]  
-> This is only compatible with zig version 0.13.0 at this time.
 
 To install the latest version of `proxz`, run
 
@@ -29,6 +29,13 @@ To install a specific version, run
 ```bash
 zig fetch --save "https://github.com/lukeharwood11/openai-proxz/archive/refs/tags/<version>.tar.gz"
 ```
+
+> [!NOTE]  
+> To install the latest version compatible with Zig `v0.13.0`, use
+>
+> ```bash
+> zig fetch --save "https://github.com/lukeharwood11/openai-proxz/archive/refs/tags/v0.1.0.tar.gz"
+> ```
 
 And add the following to your `build.zig`
 

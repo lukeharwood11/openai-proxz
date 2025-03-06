@@ -15,10 +15,12 @@ pub const std_options = std.Options{
 };
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const DebugAllocator = std.heap.DebugAllocator(.{});
+    var gpa: DebugAllocator = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // ================== Client Initialization ====================
     // make sure you have an OPENAI_API_KEY environment variable set!
     // or pass it in explicitly...
     // const alternate_config: proxz.OpenAIConfig = .{

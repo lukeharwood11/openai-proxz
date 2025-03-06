@@ -87,8 +87,8 @@ pub const ChatCompletionsRequest = struct {
     service_tier: ?[]const u8 = null,
 
     /// Optional: Up to 4 sequences where API stops generating tokens
-    /// Can be string or array of strings
-    stop: ?[]const u8 = null,
+    /// An array of strings
+    stop: ?[]const []const u8 = null,
 
     /// Optional: Temperature for sampling (0.0-2.0)
     /// Higher values increase randomness.
@@ -121,8 +121,8 @@ const ChatCompletionsBodyWithStreamField = utils.mergeStructs(ChatCompletionsReq
 pub const Message = struct {
     role: []const u8,
     content: []const u8,
-    refusal: ?[]const u8 = null,
-    function_call: ?[]const u8 = null,
+    // refusal: ?[]const u8 = null,
+    // function_call: ?[]const u8 = null,
 };
 
 /// A streamed chat completions payload
@@ -152,7 +152,7 @@ pub const ChatCompletion = struct {
     choices: []struct {
         index: u64,
         message: Message,
-        logprobs: ?[]const u8 = null,
+        // logprobs: ?[]const u8 = null,
         finish_reason: []const u8,
     },
     usage: struct {
@@ -248,7 +248,7 @@ pub const Completions = struct {
         // copy all fields over to a new struct
         var payload: ChatCompletionsBodyWithStreamField = undefined;
         const ti = @typeInfo(ChatCompletionsRequest);
-        inline for (ti.Struct.fields) |field| {
+        inline for (ti.@"struct".fields) |field| {
             @field(payload, field.name) = @field(request, field.name);
         }
         // force the stream to be set
