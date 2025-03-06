@@ -5,7 +5,7 @@ const std = @import("std");
 fn validateStruct(comptime T: type) void {
     comptime var valid_arena = false;
     const ti = @typeInfo(T);
-    inline for (ti.Struct.fields) |field| {
+    inline for (ti.@"struct".fields) |field| {
         if (comptime std.mem.eql(u8, field.name, "arena")) {
             if (field.type == *std.heap.ArenaAllocator) {
                 valid_arena = true;
@@ -24,9 +24,9 @@ pub fn deserializeStructWithArena(comptime T: type, allocator: std.mem.Allocator
     comptime validateStruct(T);
     // grab every field except the "arena" one
     const ti = @typeInfo(T);
-    comptime var fields: [ti.Struct.fields.len - 1]std.builtin.Type.StructField = undefined;
+    comptime var fields: [ti.@"struct".fields.len - 1]std.builtin.Type.StructField = undefined;
     comptime var i: usize = 0;
-    inline for (ti.Struct.fields) |field| {
+    inline for (ti.@"struct".fields) |field| {
         if (!comptime std.mem.eql(u8, field.name, "arena")) {
             fields[i] = field;
             i += 1;
@@ -34,7 +34,7 @@ pub fn deserializeStructWithArena(comptime T: type, allocator: std.mem.Allocator
     }
     // reify a type that has everything except the "arena" field
     const Tp = @Type(.{
-        .Struct = .{
+        .@"struct" = .{
             .layout = .auto,
             .fields = &fields,
             .decls = &.{},
@@ -58,7 +58,7 @@ pub fn deserializeStructWithArena(comptime T: type, allocator: std.mem.Allocator
         },
     );
     // copy the values over to the original struct T
-    inline for (ti.Struct.fields) |field| {
+    inline for (ti.@"struct".fields) |field| {
         if (!comptime std.mem.eql(u8, field.name, "arena")) {
             @field(self, field.name) = @field(result, field.name);
         }
