@@ -16,9 +16,6 @@ An OpenAI API library for the Zig programming language!
 
 ## Installation
 
-> [!NOTE]  
-> The `main` branch (and any version >= `0.2.0`) is only compatible with Zig `v0.14.0`
-
 To install the latest version of `proxz`, run
 
 ```bash
