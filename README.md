@@ -1,5 +1,5 @@
 ![Static Badge](https://img.shields.io/badge/zig-0.14.0-%23F7A41D?logo=zig&logoColor=%23F7A41D)
-![Static Badge](https://img.shields.io/badge/zig-0.13.0-white?logo=zig&logoColor=%23F7A41D)
+![Static Badge](https://img.shields.io/badge/zig-0.13.0-white?logo=zig&logoColor=white)
 ![Static Badge](https://img.shields.io/badge/License-MIT-blue)
 
 # ProxZ 🦎
